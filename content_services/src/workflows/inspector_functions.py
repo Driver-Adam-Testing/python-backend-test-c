@@ -1,6 +1,7 @@
 import uuid
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 from hatchet_client import hatchet
 from hatchet_sdk import Context, remove_null_unicode_character
@@ -257,7 +258,7 @@ def folder_doc_task(input: FolderDocInput, ctx: Context) -> dict[str, str]:
         limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
     ),
 )
-def symbol_doc_task(input: SymbolDocInput, ctx: Context) -> list[dict[str, any]]:
+def symbol_doc_task(input: SymbolDocInput, ctx: Context) -> list[dict[str, Any]]:
     print("starting symbol doc task")
     # Call the function to generate symbol docs
     node_kind = NodeKind(input.node["kind"])
@@ -288,7 +289,7 @@ def symbol_doc_task(input: SymbolDocInput, ctx: Context) -> list[dict[str, any]]
     ),
     sticky=StickyStrategy.HARD,
 )
-def toplevel_doc_task(input: TopLevelDocInput, ctx: Context) -> dict[str, any]:
+def toplevel_doc_task(input: TopLevelDocInput, ctx: Context) -> dict[str, Any]:
     print("starting toplevel doc task")
     # Call the function to generate toplevel docs
     # nodes_to_docs = {}
