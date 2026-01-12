@@ -17,13 +17,3 @@ dev = [
 
 [tool.uv]
 package = false
-
-[tool.poetry]
-name = "auth0-event-processor"
-version = "0.1.0"
-description = "Lambda function to process Auth0 webhook events from SQS"
-authors = ["Driver AI"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"

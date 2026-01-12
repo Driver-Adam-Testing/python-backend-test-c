@@ -80,7 +80,13 @@ fi
 
 docker push "$SCIM_SERVER_REPO_URI"
 
-poetry install --no-root
+uv sync --frozen --no-install-workspace
+
+# Copy workspace lockfile to each lambda for UV-based bundling
+echo "Copying uv.lock to lambda directories..."
+for lambda_dir in lambdas/*/; do
+    cp uv.lock "$lambda_dir"
+done
 
 set +e
 npx cdk deploy --require-approval never

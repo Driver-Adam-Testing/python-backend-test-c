@@ -4,6 +4,7 @@ from aws_cdk import (
     Duration,
     aws_cloudwatch,
     aws_ec2,
+    aws_ecr_assets,
     aws_events,
     aws_lambda,
     aws_secretsmanager,
@@ -61,7 +62,7 @@ class MetricsLambda(Construct):
             code=aws_lambda.DockerImageCode.from_image_asset(
                 directory=str(WORKSPACE_ROOT),
                 file="lambdas/metrics_handler/Dockerfile.lambda",
-                platform=aws_lambda.Architecture.X86_64.docker_platform,
+                platform=aws_ecr_assets.Platform.LINUX_AMD64,
             ),
             architecture=aws_lambda.Architecture.X86_64,
             vpc=vpc,

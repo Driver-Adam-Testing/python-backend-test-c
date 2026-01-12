@@ -1,3 +1,4 @@
 FROM public.ecr.aws/sam/build-python3.12:latest
 
-RUN pip install poetry==2.2.1 poetry-plugin-export
+# Install uv for dependency management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

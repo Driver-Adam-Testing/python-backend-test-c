@@ -265,7 +265,7 @@ class ChunkAndEmbedding(SQLModel, table=True):  # type: ignore
         ),
     )
     organization_id: str = Field(sa_column=Column(String, nullable=True))
-    __ts_vector__: any = Column(
+    __ts_vector__: Any = Column(
         "__ts_vector__",
         TSVector(),
         Computed("to_tsvector('english', text)", persisted=True),
