@@ -22,12 +22,11 @@ def check_poetry_version() -> None:
 
 def locate_pyproject_files(root_dir: str) -> list[Path]:
     candidates = list(Path(root_dir).rglob("pyproject.toml"))
-    # Filter out files in .venv and dev_stack directories
-    # using pathlib
     filtered_candidates = [
         path
         for path in candidates
         if not any(part in path.parts for part in [".venv", "dev_stack"])
+        and (path.parent / "poetry.lock").exists()
     ]
     return filtered_candidates
 

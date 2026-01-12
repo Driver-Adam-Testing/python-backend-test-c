@@ -1,16 +1,12 @@
-import os
+from pathlib import Path
 
 from aws_cdk import (
-    DockerImage,
     Duration,
     aws_cloudwatch,
-    aws_cloudwatch_actions,
     aws_ec2,
     aws_events,
     aws_lambda,
-    aws_lambda_python_alpha,
     aws_secretsmanager,
-    aws_sns,
     aws_sqs,
     aws_ssm,
 )
@@ -18,7 +14,11 @@ from aws_cdk import (
     aws_events_targets as targets,
 )
 from constructs import Construct
+
 from cdk.settings import settings
+
+# Workspace root (where uv.lock and pyproject.toml live)
+WORKSPACE_ROOT = Path(__file__).parent.parent.parent
 
 
 class MetricsLambdaParams:
@@ -44,20 +44,26 @@ class MetricsLambda(Construct):
             scope, parameter_name="/baseline/infra/v2/vpc/id"
         )
         vpc = aws_ec2.Vpc.from_lookup(self, id="BaselineVPC_DRV_24", vpc_id=vpc_id)
-        driver_db_path = os.path.abspath("packages/driver_db")
-        alarm_topic_arn = aws_ssm.StringParameter.value_for_string_parameter(self, '/infrastructure/alarms/topic-arn')
-        alarm_topic = aws_sns.Topic.from_topic_arn(self, 'InfrastructureAlarmsTopic', alarm_topic_arn)
+        # alarm_topic_arn = aws_ssm.StringParameter.value_for_string_parameter(
+        #     self, "/infrastructure/alarms/topic-arn"
+        # )
+        # alarm_topic = aws_sns.Topic.from_topic_arn(
+        #     self, "InfrastructureAlarmsTopic", alarm_topic_arn
+        # )
 
         lambda_concurrent_executions = None
         if settings.IS_PRODUCTION_ACCOUNT == "true":
             lambda_concurrent_executions = 10
 
-        self.lambda_function = aws_lambda_python_alpha.PythonFunction(
+        self.lambda_function = aws_lambda.DockerImageFunction(
             scope,
             "MetricsLambdaPy",
-            entry="lambdas/metrics_handler",
-            runtime=aws_lambda.Runtime.PYTHON_3_12,
-            index="src/main.py",
+            code=aws_lambda.DockerImageCode.from_image_asset(
+                directory=str(WORKSPACE_ROOT),
+                file="lambdas/metrics_handler/Dockerfile.lambda",
+                platform=aws_lambda.Architecture.X86_64.docker_platform,
+            ),
+            architecture=aws_lambda.Architecture.X86_64,
             vpc=vpc,
             vpc_subnets=aws_ec2.SubnetSelection(
                 subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_EGRESS
@@ -69,18 +75,6 @@ class MetricsLambda(Construct):
                 "DATABASE_URL_SECRET_NAME": database_url_secret.secret_name,
                 "IS_PRIVATE_DEPLOY": "true" if params.is_private_deploy else "false",
             },
-            bundling=aws_lambda_python_alpha.BundlingOptions(
-                platform="linux/amd64",
-                asset_excludes=[".venv", ".env", "tests/", ".pytest*"],
-                image=DockerImage.from_build(
-                    path=".",
-                    file="Dockerfile.lambda-bundler",
-                    platform="linux/amd64",
-                ),
-                volumes=[
-                    {"containerPath": "/packages/driver_db", "hostPath": driver_db_path},
-                ],
-            ),
             reserved_concurrent_executions=lambda_concurrent_executions,
             timeout=Duration.seconds(60),
         )
@@ -89,7 +83,9 @@ class MetricsLambda(Construct):
         # Grant permission to read firewall certificate for private deployments
         if params.is_private_deploy:
             firewall_cert_secret = aws_secretsmanager.Secret.from_secret_name_v2(
-                self, "FirewallCertSecret", secret_name="/network-firewall/ca-certificate"
+                self,
+                "FirewallCertSecret",
+                secret_name="/network-firewall/ca-certificate",
             )
             firewall_cert_secret.grant_read(self.lambda_function)
 
@@ -110,7 +106,7 @@ class MetricsLambda(Construct):
             targets=[event_target],
             event_pattern=aws_events.EventPattern(source=["metrics.client"]),
         )
-        
+
         self.metric_dlq_alarm = aws_cloudwatch.Alarm(
             self,
             "MetricDLQAlarm",
