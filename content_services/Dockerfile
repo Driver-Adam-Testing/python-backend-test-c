@@ -52,7 +52,7 @@ ARG GIT_BRANCH
 ENV GIT_COMMIT=${GIT_COMMIT} GIT_BRANCH=${GIT_BRANCH}
 ENV HATCHET_ENV=production
 
-# Make workspace packages importable (database, shared modules)
-ENV PYTHONPATH="/packages/driver_db:/packages/shared:${PYTHONPATH}"
+# Workspace packages are copied to /packages - add to PYTHONPATH for imports
+ENV PYTHONPATH="/packages/driver_db:/packages/shared"
 
 CMD ["/bin/sh", "-c", "/start.sh"]

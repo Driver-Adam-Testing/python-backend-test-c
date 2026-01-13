@@ -1,3 +1,6 @@
+# Build context: workspace root (driver-ai-app/)
+# Usage: docker build -t backend .
+
 FROM python:3.12-slim
 
 WORKDIR /app/
@@ -8,38 +11,33 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=/opt/poetry python && \
-    cd /usr/local/bin && \
-    ln -s /opt/poetry/bin/poetry
+COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
 
-# Configure Poetry to not create virtual environments
-RUN poetry config virtualenvs.create false
-
-# Copy the driver-db package first
+# Copy workspace packages FIRST (needed for uv export to resolve workspace deps)
 COPY packages/driver_db /packages/driver_db
 COPY packages /packages
 
-# Copy pyproject.toml and poetry.lock first for better caching
-COPY backend/pyproject.toml backend/poetry.lock /app/
+# Copy workspace config files for uv export
+COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/pyproject.toml
 
-
-ENV PYTHONPATH=/app
+# Export only backend dependencies from unified lockfile
+# app is the package name in backend/pyproject.toml
+RUN uv export --package app --frozen --no-dev --no-emit-workspace -o requirements.txt
 
 # Install dependencies
-ARG INSTALL_DEV=false
-RUN bash -c "if [ $INSTALL_DEV == 'true' ] ; then poetry install --no-root ; else poetry install --no-root --only main ; fi"
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt
 
-RUN apt-get purge -y --auto-remove build-essential curl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Remove build dependencies
+RUN apt-get purge -y --auto-remove build-essential \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install start scripts
 COPY backend/scripts/start-reload.sh /start-reload.sh
 COPY backend/scripts/start.sh /start.sh
 COPY backend/scripts/gunicorn_conf.py /gunicorn_conf.py
-RUN chmod +x /start-reload.sh
-RUN chmod +x /start.sh
+RUN chmod +x /start-reload.sh /start.sh
 
 # Copy the rest of the application
 COPY backend/scripts/ /app/scripts/
@@ -51,14 +49,14 @@ COPY backend/app /app/app
 COPY setEnv.sh* /
 
 # Install tiktoken encodings for single-tenant envs without internet access
-RUN poetry run python -c "import tiktoken; tiktoken.encoding_for_model('gpt-4'); tiktoken.encoding_for_model('gpt-4.1')"
+RUN python -c "import tiktoken; tiktoken.encoding_for_model('gpt-4'); tiktoken.encoding_for_model('gpt-4.1')"
 
 # Capture Git info at build time
 ARG GIT_COMMIT
 ARG GIT_BRANCH
+ENV GIT_COMMIT=${GIT_COMMIT} GIT_BRANCH=${GIT_BRANCH}
 
-# Set environment variables
-ENV GIT_COMMIT=${GIT_COMMIT}
-ENV GIT_BRANCH=${GIT_BRANCH}
+# Workspace packages are copied to /packages - add to PYTHONPATH for imports
+ENV PYTHONPATH="/app:/packages/driver_db:/packages/shared"
 
-CMD [ "/bin/sh", "-c", "if [ \"$INSTALL_DEV\" = 'true' ]; then exec /start-reload.sh \"$@\"; else exec /start.sh \"$@\"; fi" ]
+CMD [ "/bin/sh", "-c", "exec /start.sh" ]
