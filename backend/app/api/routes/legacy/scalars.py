@@ -11,17 +11,6 @@ JSON = strawberry.scalar(
 
 
 @strawberry.scalar
-class ID(str):
-    @staticmethod
-    def parse_value(value: str) -> str:
-        return value
-
-    @staticmethod
-    def serialize(value: str) -> str:
-        return value
-
-
-@strawberry.scalar
 class NodeType(str):
     @staticmethod
     def parse_value(value: str) -> str:

@@ -1,7 +1,6 @@
 # mypy: disable_error_code="call-arg"
 
 import strawberry
-from app.api.routes.legacy.scalars import ID
 from database.models import Node, PrimaryAsset, Version, VersionNode
 from sqlmodel import Session, select
 
@@ -15,7 +14,7 @@ class NodeTypeEnum:
 
 @strawberry.type
 class FlatNode:
-    id: ID
+    id: strawberry.ID
     name: str | None
     path: str | None  # relative_path renamed to path
     kind: str | None
@@ -56,7 +55,7 @@ def get_codebase_tree(
             name = relative_path.split("/")[-1] if relative_path else ""
 
         flat_node = FlatNode(
-            id=ID(str(version_node.id)),
+            id=strawberry.ID(str(version_node.id)),
             name=name,
             path=relative_path,
             kind=kind,
