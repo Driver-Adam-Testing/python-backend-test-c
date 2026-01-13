@@ -38,7 +38,7 @@ dependencies = [
     "pygit2>=1.18.2,<2.0.0",
     "notion-client>=2.4.0,<3.0.0",
     "sentry-sdk>=2.0.0,<3.0.0",
-    "hatchet-sdk>=1.20.0,<2.0.0",
+    "hatchet-sdk==1.20.0",
     "greenlet>=3.2.4,<4.0.0",
     "auth0-python>=4.13.0,<5.0.0",
     "truststore>=0.10.4,<0.11.0",
