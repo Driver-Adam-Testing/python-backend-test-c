@@ -69,23 +69,6 @@ packages = ["src"]
 database = { workspace = true }
 shared = { workspace = true }
 
-[tool.poetry]
-name = "hatchet-python"
-version = "0.1.0"
-description = "Run Hatchet Workflows"
-authors = ["driver"]
-readme = "README.md"
-packages = [{include = "src"}]
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-database = {path = "../packages/driver_db", develop = true}
-shared = {path = "../packages/shared", develop = true}
-
-[tool.poetry.scripts]
-simple = "src.run:main"
-worker = "src.worker:main"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
