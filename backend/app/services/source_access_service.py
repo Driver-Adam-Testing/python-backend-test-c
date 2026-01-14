@@ -235,9 +235,19 @@ class SourceAccessService:
 
         try:
             self.session.commit()
+            sources_info = [
+                {"source_id": s.source_id, "role": s.role.value}
+                for s in request.sources
+            ]
             logger.info(
-                f"Processed {len(request.sources)} sources: "
-                f"{stats['added']} added, {stats['updated']} updated, {stats['unchanged']} unchanged"
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, sources=%s, stats=%s",
+                "team.source.add",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(team_id),
+                sources_info,
+                stats,
             )
         except Exception as e:
             self.session.rollback()
@@ -284,6 +294,7 @@ class SourceAccessService:
             )
 
         # Update each source's role
+        changes: list[dict] = []
         for source in request.sources:
             grant = acl_repository.get_grant_by_team_and_asset(
                 session=self.session,
@@ -299,12 +310,29 @@ class SourceAccessService:
                     detail=f"Source {source.source_id} is not assigned to this team",
                 )
 
+            # Capture old role for logging
+            old_role = grant.role.value
             grant.role = source.role
             self.session.add(grant)
+            changes.append(
+                {
+                    "source_id": source.source_id,
+                    "old_role": old_role,
+                    "new_role": source.role.value,
+                }
+            )
 
         try:
             self.session.commit()
-            logger.info(f"Successfully updated {len(request.sources)} sources")
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, changes=%s",
+                "team.source.update",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(team_id),
+                changes,
+            )
         except Exception as e:
             self.session.rollback()
             logger.error(f"Failed to update team sources: {e}")
@@ -361,7 +389,16 @@ class SourceAccessService:
 
         try:
             self.session.commit()
-            logger.info(f"Successfully removed {removed_count} sources from team")
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, removed_source_ids=%s, removed_count=%s",
+                "team.source.remove",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(team_id),
+                request.source_ids,
+                removed_count,
+            )
         except Exception as e:
             self.session.rollback()
             logger.error(f"Failed to remove team sources: {e}")
@@ -608,7 +645,18 @@ class SourceAccessService:
         try:
             self._add_users_to_source(source_id, organization_id, request.users)
             self.session.commit()
-            logger.info(f"Successfully added {len(request.users)} users to source")
+            added_users = [
+                {"user_id": u.user_id, "role": u.role.value} for u in request.users
+            ]
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, source_id=%s, added_users=%s",
+                "source.user.add",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(source_id),
+                added_users,
+            )
         except IntegrityError as e:
             self.session.rollback()
             if "duplicate key value violates unique constraint" in str(e.orig):
@@ -658,6 +706,7 @@ class SourceAccessService:
             )
 
         # Update each user's role
+        changes: list[dict] = []
         for user_input in request.users:
             grant = acl_repository.get_grant_by_user_and_asset(
                 session=self.session,
@@ -674,12 +723,29 @@ class SourceAccessService:
                     detail=f"User {user_input.user_id} does not have access to this source",
                 )
 
+            # Capture old role for logging
+            old_role = grant.role.value
             grant.role = user_input.role
             self.session.add(grant)
+            changes.append(
+                {
+                    "user_id": user_input.user_id,
+                    "old_role": old_role,
+                    "new_role": user_input.role.value,
+                }
+            )
 
         try:
             self.session.commit()
-            logger.info(f"Successfully updated {len(request.users)} users")
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, source_id=%s, changes=%s",
+                "source.user.update",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(source_id),
+                changes,
+            )
         except Exception as e:
             self.session.rollback()
             logger.error(f"Failed to update source users: {e}")
@@ -737,7 +803,16 @@ class SourceAccessService:
 
         try:
             self.session.commit()
-            logger.info(f"Successfully removed {removed_count} users from source")
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, source_id=%s, removed_user_ids=%s, removed_count=%s",
+                "source.user.remove",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(source_id),
+                request.user_ids,
+                removed_count,
+            )
         except Exception as e:
             self.session.rollback()
             logger.error(f"Failed to remove source users: {e}")
@@ -795,7 +870,18 @@ class SourceAccessService:
         try:
             self._add_teams_to_source(source_id, organization_id, request.teams)
             self.session.commit()
-            logger.info(f"Successfully added {len(request.teams)} teams to source")
+            added_teams = [
+                {"team_id": str(t.team_id), "role": t.role.value} for t in request.teams
+            ]
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, source_id=%s, added_teams=%s",
+                "source.team.add",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(source_id),
+                added_teams,
+            )
         except IntegrityError as e:
             self.session.rollback()
             if "duplicate key value violates unique constraint" in str(e.orig):
@@ -845,6 +931,7 @@ class SourceAccessService:
             )
 
         # Update each team's role
+        changes: list[dict] = []
         for team_input in request.teams:
             # Verify team exists in organization
             team = team_repository.get_team_by_id(
@@ -875,12 +962,29 @@ class SourceAccessService:
                     detail=f"Team {team_input.team_id} does not have access to this source",
                 )
 
+            # Capture old role for logging
+            old_role = grant.role.value
             grant.role = team_input.role
             self.session.add(grant)
+            changes.append(
+                {
+                    "team_id": str(team_input.team_id),
+                    "old_role": old_role,
+                    "new_role": team_input.role.value,
+                }
+            )
 
         try:
             self.session.commit()
-            logger.info(f"Successfully updated {len(request.teams)} teams")
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, source_id=%s, changes=%s",
+                "source.team.update",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(source_id),
+                changes,
+            )
         except Exception as e:
             self.session.rollback()
             logger.error(f"Failed to update source teams: {e}")
@@ -938,7 +1042,16 @@ class SourceAccessService:
 
         try:
             self.session.commit()
-            logger.info(f"Successfully removed {removed_count} teams from source")
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, source_id=%s, removed_team_ids=%s, removed_count=%s",
+                "source.team.remove",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(source_id),
+                [str(tid) for tid in request.team_ids],
+                removed_count,
+            )
         except Exception as e:
             self.session.rollback()
             logger.error(f"Failed to remove source teams: {e}")

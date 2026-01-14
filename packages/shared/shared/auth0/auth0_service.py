@@ -288,6 +288,18 @@ class Auth0Service:
                         body=payload,
                     )
                 )
+            invitees_info = [
+                {"email": inv.invitee.email, "role": inv.role.value}
+                for inv in invitations.invitations
+            ]
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, invitees=%s",
+                "invitation.create",
+                user.user_id,
+                user.organization_id,
+                user.organization_display_name,
+                invitees_info,
+            )
             return invitation_results
         except Exception as e:
             logger.error(
@@ -358,9 +370,18 @@ class Auth0Service:
         try:
             mgmt_api_token = self.get_mgmt_api_token()
             management_api = Auth0(self.auth0_mgmt_domain, mgmt_api_token)
-            return management_api.organizations.delete_organization_invitation(
+            result = management_api.organizations.delete_organization_invitation(
                 id=user.organization_id, invitation_id=invitation_id
             )
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, invitation_id=%s",
+                "invitation.delete",
+                user.user_id,
+                user.organization_id,
+                user.organization_display_name,
+                invitation_id,
+            )
+            return result
         except Exception as e:
             logger.error(
                 f"Something went wrong revoking invitation id = {invitation_id} from the organization {user.organization_id}"

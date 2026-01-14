@@ -164,8 +164,9 @@ class TeamMemberService:
             HTTPException: If team not found or member already exists
         """
         organization_id = user.organization_id
+        actor_user_id = user.user_id
         logger.info(
-            f"Adding {len(request.members)} members to team {team_id} by user {user.user_id}"
+            f"Adding {len(request.members)} members to team {team_id} by user {actor_user_id}"
         )
 
         # Verify team exists and belongs to organization
@@ -184,8 +185,8 @@ class TeamMemberService:
 
         # Verify all users exist and belong to organization
         for member in request.members:
-            user = get_user_by_id(self.session, member.user_id)
-            if not user:
+            db_user = get_user_by_id(self.session, member.user_id)
+            if not db_user:
                 logger.error(f"User {member.user_id} not found")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -208,8 +209,17 @@ class TeamMemberService:
         try:
             self._add_members_to_team(team_id, request.members)
             self.session.commit()
+            added_members = [
+                {"user_id": m.user_id, "role": m.role.value} for m in request.members
+            ]
             logger.info(
-                f"Successfully added {len(request.members)} members to team {team_id}"
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, added_members=%s",
+                "team.member.add",
+                actor_user_id,
+                organization_id,
+                user.organization_display_name,
+                str(team_id),
+                added_members,
             )
         except IntegrityError as e:
             self.session.rollback()
@@ -262,6 +272,7 @@ class TeamMemberService:
             )
 
         # Update each member's role
+        changes: list[dict] = []
         for member in request.members:
             membership = team_member_repository.get_membership(
                 session=self.session,
@@ -275,13 +286,28 @@ class TeamMemberService:
                     detail=f"User {member.user_id} is not a member of this team",
                 )
 
+            # Capture old role for logging
+            old_role = membership.role.value
             membership.role = member.role
             self.session.add(membership)
+            changes.append(
+                {
+                    "user_id": member.user_id,
+                    "old_role": old_role,
+                    "new_role": member.role.value,
+                }
+            )
 
         try:
             self.session.commit()
             logger.info(
-                f"Successfully updated {len(request.members)} members in team {team_id}"
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, changes=%s",
+                "team.member.update",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(team_id),
+                changes,
             )
         except Exception as e:
             self.session.rollback()
@@ -342,7 +368,14 @@ class TeamMemberService:
         try:
             self.session.commit()
             logger.info(
-                f"Successfully removed {removed_count} members from team {team_id}"
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, removed_user_ids=%s, removed_count=%s",
+                "team.member.remove",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(team_id),
+                request.user_ids,
+                removed_count,
             )
         except Exception as e:
             self.session.rollback()
