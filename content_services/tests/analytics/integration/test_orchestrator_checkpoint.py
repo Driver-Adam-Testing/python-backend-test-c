@@ -6,6 +6,8 @@ These tests verify that:
 1. Orchestrator saves extraction checkpoints to S3 during long extractions
 2. Orchestrator can resume from a checkpoint if extraction was interrupted
 3. Checkpoint is deleted after successful completion
+
+NOTE: These tests require the native Rust extension for checkpoint callbacks.
 """
 
 import json
@@ -15,6 +17,23 @@ from unittest.mock import MagicMock, patch
 import pygit2
 import pytest
 from analytics.checkpoint import ExtractionCheckpoint
+
+
+def native_extension_available():
+    try:
+        from analytics_native import calculate_tree_sizes_incremental  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+# xfail all tests in this module if native extension not available
+pytestmark = pytest.mark.xfail(
+    not native_extension_available(),
+    run=False,
+    reason="Requires native extension for checkpoint callbacks",
+)
 
 
 class TestOrchestratorCheckpointIntegration:
