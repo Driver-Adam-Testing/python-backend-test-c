@@ -1,4 +1,4 @@
 FROM public.ecr.aws/sam/build-python3.12:latest
 
 # Install uv for dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.25 /uv /usr/local/bin/uv

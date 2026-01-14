@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.25 /uv /usr/local/bin/uv
 
 # Copy workspace packages FIRST (needed for uv export to resolve workspace deps)
 COPY packages/driver_db /packages/driver_db
@@ -59,4 +59,7 @@ ENV GIT_COMMIT=${GIT_COMMIT} GIT_BRANCH=${GIT_BRANCH}
 # Workspace packages are copied to /packages - add to PYTHONPATH for imports
 ENV PYTHONPATH="/app:/packages/driver_db:/packages/shared"
 
-CMD [ "/bin/sh", "-c", "exec /start.sh" ]
+ARG INSTALL_DEV=false
+ENV INSTALL_DEV=${INSTALL_DEV}
+
+CMD [ "/bin/sh", "-c", "if [ \"$INSTALL_DEV\" = 'true' ]; then exec /start-reload.sh; else exec /start.sh; fi" ]
