@@ -81,4 +81,20 @@ class OnboardingChecklistService:
         self._set_once("enable_export_completed_at", when)
         return self
 
+    def mark_configured_rbac_completed(self, when: datetime) -> Self:
+        self._set_once("configured_rbac_completed_at", when)
+        return self
+
+    def mark_teams_completed(self, when: datetime) -> Self:
+        self._set_once("teams_completed_at", when)
+        return self
+
+    def mark_scim_provisioning_completed(self, when: datetime) -> Self:
+        self._set_once("scim_provisioning_completed_at", when)
+        return self
+
+    def mark_sso_sync_completed(self, when: datetime) -> Self:
+        self._set_once("sso_sync_completed_at", when)
+        return self
+
 

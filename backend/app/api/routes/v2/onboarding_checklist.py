@@ -1,4 +1,13 @@
-from database.models import ApiKey, OnboardingChecklist, PrimaryAsset, Version
+from datetime import datetime, timezone
+
+from database.models import (
+    ApiKey,
+    OnboardingChecklist,
+    PrimaryAsset,
+    PrimaryAssetRoleGrant,
+    Team,
+    Version,
+)
 from database.models_enums import PrimaryAssetKind, VersionStatus
 from fastapi import APIRouter
 from sqlmodel import select
@@ -83,21 +92,43 @@ def get_onboarding_checklist(
                 auto_export_codebase.updated_at or auto_export_codebase.created_at
             )
 
+    # If configured_rbac is not marked complete, infer from 3+ role grants existing
+    # (initial admin users typically get automatic grants, so we check for additional config)
+    if checklist.configured_rbac_completed_at is None:
+        role_grants = session.exec(
+            select(PrimaryAssetRoleGrant)
+            .where(PrimaryAssetRoleGrant.organization_id == user.organization_id)
+            .order_by(PrimaryAssetRoleGrant.created_at.asc())
+            .limit(3)
+        ).all()
+
+        if len(role_grants) >= 3:
+            # Use the timestamp of the 3rd grant as the completion time
+            svc.mark_configured_rbac_completed(role_grants[2].created_at)
+
+    # If teams_completed is not marked complete, infer from any teams existing
+    if checklist.teams_completed_at is None:
+        first_team = session.exec(
+            select(Team)
+            .where(Team.organization_id == user.organization_id)
+        ).first()
+
+        if first_team is not None:
+            # Team model doesn't have created_at, use current time
+            svc.mark_teams_completed(datetime.now(timezone.utc))
+
     # If all steps are complete, set the checklist_completed_at to the newest timestamp
     completed_dates = [
         completed_at
         for completed_at in [
             checklist.connect_codebase_completed_at,
-            checklist.generate_codebase_completed_at,
-            checklist.setup_mcp_completed_at,
-            checklist.enable_export_completed_at,
+            checklist.teams_completed_at,
             checklist.generate_autodoc_completed_at,
-            checklist.invite_teammate_completed_at,
         ]
         if completed_at is not None
     ]
 
-    if len(completed_dates) == 6:
+    if len(completed_dates) == 3:
         newest = max(completed_dates)
         if checklist.checklist_completed_at != newest:
             checklist.checklist_completed_at = newest

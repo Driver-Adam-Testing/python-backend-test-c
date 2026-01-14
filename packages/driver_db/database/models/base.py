@@ -1191,6 +1191,18 @@ class OnboardingChecklist(SQLModel, table=True):
     invite_teammate_completed_at: None | datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=True), default=None
     )
+    configured_rbac_completed_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    teams_completed_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    scim_provisioning_completed_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    sso_sync_completed_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
     checklist_completed_at: None | datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=True), default=None
     )
