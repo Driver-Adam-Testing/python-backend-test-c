@@ -64,6 +64,7 @@ def skip_onboarding_step(
         user_id=user.user_id,
     )
     svc.skip_step(step)
+    _update_checklist_completion(session, svc.checklist)
     return svc.checklist
 
 
@@ -79,6 +80,7 @@ def unskip_onboarding_step(
         user_id=user.user_id,
     )
     svc.unskip_step(step)
+    _update_checklist_completion(session, svc.checklist)
     return svc.checklist
 
 
