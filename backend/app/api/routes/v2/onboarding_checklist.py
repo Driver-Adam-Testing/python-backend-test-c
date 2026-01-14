@@ -113,7 +113,9 @@ def _infer_connect_codebase(
     svc: OnboardingChecklistService,
     checklist: OnboardingChecklist,
 ) -> None:
-    if checklist.connect_codebase_completed_at is not None:
+    if _is_step_done(
+        checklist.connect_codebase_completed_at, checklist.connect_codebase_skipped_at
+    ):
         return
     first_codebase = session.exec(
         select(PrimaryAsset)
@@ -131,7 +133,9 @@ def _infer_generate_codebase(
     svc: OnboardingChecklistService,
     checklist: OnboardingChecklist,
 ) -> None:
-    if checklist.generate_codebase_completed_at is not None:
+    if _is_step_done(
+        checklist.generate_codebase_completed_at, checklist.generate_codebase_skipped_at
+    ):
         return
     first_completed_version = session.exec(
         select(Version)
@@ -155,7 +159,7 @@ def _infer_setup_mcp(
     svc: OnboardingChecklistService,
     checklist: OnboardingChecklist,
 ) -> None:
-    if checklist.setup_mcp_completed_at is not None:
+    if _is_step_done(checklist.setup_mcp_completed_at, checklist.setup_mcp_skipped_at):
         return
     api_key = session.exec(
         select(ApiKey)
@@ -174,7 +178,9 @@ def _infer_enable_export(
     svc: OnboardingChecklistService,
     checklist: OnboardingChecklist,
 ) -> None:
-    if checklist.enable_export_completed_at is not None:
+    if _is_step_done(
+        checklist.enable_export_completed_at, checklist.enable_export_skipped_at
+    ):
         return
     auto_export_codebase = session.exec(
         select(PrimaryAsset)
@@ -195,7 +201,9 @@ def _infer_configured_rbac(
     svc: OnboardingChecklistService,
     checklist: OnboardingChecklist,
 ) -> None:
-    if checklist.configured_rbac_completed_at is not None:
+    if _is_step_done(
+        checklist.configured_rbac_completed_at, checklist.configured_rbac_skipped_at
+    ):
         return
     # Require 3+ grants since initial admin users get automatic grants
     role_grants = session.exec(
@@ -214,7 +222,7 @@ def _infer_teams_completed(
     svc: OnboardingChecklistService,
     checklist: OnboardingChecklist,
 ) -> None:
-    if checklist.teams_completed_at is not None:
+    if _is_step_done(checklist.teams_completed_at, checklist.teams_skipped_at):
         return
     first_team = session.exec(
         select(Team).where(Team.organization_id == user.organization_id)
