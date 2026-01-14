@@ -48,7 +48,6 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     environment: development
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
