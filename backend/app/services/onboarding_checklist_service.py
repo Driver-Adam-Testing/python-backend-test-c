@@ -112,24 +112,20 @@ class OnboardingChecklistService:
         return self
 
     def skip_step(self, step: str) -> Self:
-        """Skip a step - sets *_skipped_at to now, clears *_completed_at"""
         if step not in SKIPPABLE_STEPS:
             raise ValueError(f"Invalid step: {step}")
-        skipped_field = f"{step}_skipped_at"
-        completed_field = f"{step}_completed_at"
-        setattr(self._checklist, skipped_field, _now_utc())
-        setattr(self._checklist, completed_field, None)
+        setattr(self._checklist, f"{step}_skipped_at", _now_utc())
+        # Clear completed_at since skipping takes precedence
+        setattr(self._checklist, f"{step}_completed_at", None)
         self._session.add(self._checklist)
         self._session.commit()
         self._session.refresh(self._checklist)
         return self
 
     def unskip_step(self, step: str) -> Self:
-        """Unskip a step - clears *_skipped_at"""
         if step not in SKIPPABLE_STEPS:
             raise ValueError(f"Invalid step: {step}")
-        skipped_field = f"{step}_skipped_at"
-        setattr(self._checklist, skipped_field, None)
+        setattr(self._checklist, f"{step}_skipped_at", None)
         self._session.add(self._checklist)
         self._session.commit()
         self._session.refresh(self._checklist)
