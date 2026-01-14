@@ -115,8 +115,6 @@ class OnboardingChecklistService:
         if step not in SKIPPABLE_STEPS:
             raise ValueError(f"Invalid step: {step}")
         setattr(self._checklist, f"{step}_skipped_at", _now_utc())
-        # Clear completed_at since skipping takes precedence
-        setattr(self._checklist, f"{step}_completed_at", None)
         self._session.add(self._checklist)
         self._session.commit()
         self._session.refresh(self._checklist)
