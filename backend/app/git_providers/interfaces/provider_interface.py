@@ -26,6 +26,9 @@ class WebhookEventContext:
     installation_id: str
     organization_id: str
     session: Session
+    raw_body: bytes | None = (
+        None  # Raw request body for HMAC signature verification. TODO: Revisit design.
+    )
 
 
 class GitProviderInterface(ABC):
@@ -47,7 +50,9 @@ class GitProviderInterface(ABC):
         """
 
     @abstractmethod
-    def validate_access_token(self, token_data: dict) -> tuple[bool, str | None]:
+    def validate_access_token(
+        self, token_data: dict[str, Any]
+    ) -> tuple[bool, str | None]:
         """Validate an access token before installation
 
         Args:
@@ -59,7 +64,7 @@ class GitProviderInterface(ABC):
 
     @abstractmethod
     def create_installation(
-        self, organization_id: str, app_id: str, token_data: dict
+        self, organization_id: str, app_id: str, token_data: dict[str, Any]
     ) -> GitProviderAppInstallation:
         """Create an installation record
 
@@ -74,7 +79,7 @@ class GitProviderInterface(ABC):
 
     @abstractmethod
     def store_secrets(
-        self, installation: GitProviderAppInstallation, token_data: dict
+        self, installation: GitProviderAppInstallation, token_data: dict[str, Any]
     ) -> None:
         """Store access token and related secrets
 
@@ -84,7 +89,7 @@ class GitProviderInterface(ABC):
         """
 
     def update_secrets(
-        self, installation: GitProviderAppInstallation, token_data: dict
+        self, installation: GitProviderAppInstallation, token_data: dict[str, Any]
     ) -> None:
         """Update access token while preserving other secrets like webhook tokens
 
@@ -98,7 +103,7 @@ class GitProviderInterface(ABC):
         self.store_secrets(installation, token_data)
 
     @abstractmethod
-    def fetch_secrets(self, installation: GitProviderAppInstallation) -> dict:
+    def fetch_secrets(self, installation: GitProviderAppInstallation) -> dict[str, Any]:
         """Fetch stored secrets for an installation
         Args:
             installation: The installation record
@@ -119,38 +124,22 @@ class GitProviderInterface(ABC):
             List of GitRepository objects
         """
 
-    # @abstractmethod
-    # def clone_repository(
-    #     self,
-    #     repo_info: GitRepository,
-    #     user_id: str,
-    #     org_id: str,
-    #     upload_key: str,
-    #     bucket_name: str,
-    # ) -> str:
-    #     """Clone a repository and upload to S3
-    #
-    #     Args:
-    #         repo_info: Repository information
-    #         user_id: User ID initiating the clone
-    #         org_id: Organization ID
-    #         upload_key: S3 upload key
-    #         bucket_name: S3 bucket name
-    #
-    #     Returns:
-    #         Presigned download URL
-    #     """
-
     @abstractmethod
     def handle_webhook_event(
-        self, headers: dict, payload: dict, webhook_event_ctx: WebhookEventContext
-    ) -> dict:
+        self,
+        headers: dict[str, Any],
+        payload: dict[str, Any],
+        webhook_event_ctx: WebhookEventContext,
+    ) -> dict[str, Any]:  # TODO: Revisit return concrete type.
         """Handle incoming webhook events
 
         Args:
             headers: HTTP headers from the webhook request
             payload: JSON payload from the webhook request
             webhook_event_ctx: Context containing app_id, installation_id, organization_id
+
+        Returns:
+            Dict with processing result (e.g., {"processed": True, "event_type": "..."})
         """
 
     @abstractmethod
@@ -178,4 +167,19 @@ class GitProviderInterface(ABC):
 
         Returns:
             Dict containing webhook details (id, url, active, created_at, etc.)
+        """
+
+    @abstractmethod
+    def deregister_webhook(
+        self,
+        installation: GitProviderAppInstallation,
+        webhook_id: str,
+    ) -> None:
+        """Deregister a webhook by ID.
+
+        Provider handles scope lookup internally using installation metadata.
+
+        Args:
+            installation: The installation the webhook belongs to
+            webhook_id: The webhook ID to deregister
         """

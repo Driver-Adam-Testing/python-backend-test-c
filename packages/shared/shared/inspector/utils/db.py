@@ -29,6 +29,23 @@ async def get_version_by_id(version_id: uuid.UUID) -> Version:
         return (await session.exec(statement)).one()
 
 
+def sync_get_version_by_id(version_id: uuid.UUID) -> Version:
+    from database.db import engine
+    from sqlalchemy.orm import selectinload
+    from sqlmodel import Session, select
+
+    with Session(engine) as session:
+        statement = (
+            select(Version)
+            .where(Version.id == version_id)
+            .options(
+                selectinload(Version.primary_asset),
+                selectinload(Version.root_version_node).selectinload(VersionNode.node),
+            )
+        )
+        return session.exec(statement).one()
+
+
 async def delete_version_by_id(version_id: uuid.UUID) -> None:
     from database.db import async_engine
     from sqlmodel import select

@@ -7,7 +7,7 @@ and divergence points from the default branch.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pygit2
 
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BranchInfo:
     """Information about a discovered branch."""
+
     name: str
     head_sha: str
     divergence_point_sha: str | None
@@ -29,6 +30,7 @@ class BranchInfo:
 @dataclass
 class BranchesResult:
     """Result of branch discovery."""
+
     success: bool
     branches: list[BranchInfo]
     default_branch: str | None
@@ -36,8 +38,7 @@ class BranchesResult:
 
 
 def discover_branches(
-    repo: pygit2.Repository,
-    default_branch_only: bool = False
+    repo: pygit2.Repository, default_branch_only: bool = False
 ) -> BranchesResult:
     """
     Discover all branches in repository.
@@ -60,7 +61,9 @@ def discover_branches(
 
         if default_branch_only:
             logger.info("Only discovering default branch")
-            branch_info = _analyze_branch(repo, default_branch_name, default_branch_name)
+            branch_info = _analyze_branch(
+                repo, default_branch_name, default_branch_name
+            )
             if branch_info:
                 branches.append(branch_info)
         else:
@@ -70,7 +73,9 @@ def discover_branches(
 
             for branch_name in branch_names:
                 try:
-                    branch_info = _analyze_branch(repo, branch_name, default_branch_name)
+                    branch_info = _analyze_branch(
+                        repo, branch_name, default_branch_name
+                    )
                     if branch_info:
                         branches.append(branch_info)
                 except Exception as e:
@@ -80,25 +85,20 @@ def discover_branches(
         logger.info(f"Successfully discovered {len(branches)} branches")
 
         return BranchesResult(
-            success=True,
-            branches=branches,
-            default_branch=default_branch_name
+            success=True, branches=branches, default_branch=default_branch_name
         )
 
     except Exception as e:
         error_msg = f"Failed to discover branches: {e}"
         logger.error(error_msg)
         return BranchesResult(
-            success=False,
-            branches=[],
-            default_branch=None,
-            error=error_msg
+            success=False, branches=[], default_branch=None, error=error_msg
         )
 
 
 def _get_default_branch(repo: pygit2.Repository) -> str:
     """Get the default branch name.
-    
+
     Priority:
     1. refs/remotes/origin/HEAD (GitHub sets this to the actual default)
     2. Common default branch names that exist locally
@@ -161,14 +161,12 @@ def _get_all_branch_names(repo: pygit2.Repository) -> list[str]:
             if branch_name.upper() != "HEAD":
                 branch_names.add(branch_name)
 
-    logger.info(f"All discovered branch names: {sorted(list(branch_names))}")
-    return sorted(list(branch_names))
+    logger.info(f"All discovered branch names: {sorted(branch_names)}")
+    return sorted(branch_names)
 
 
 def _analyze_branch(
-    repo: pygit2.Repository,
-    branch_name: str,
-    default_branch_name: str
+    repo: pygit2.Repository, branch_name: str, default_branch_name: str
 ) -> BranchInfo | None:
     """Analyze a single branch and extract information."""
     # Get branch reference
@@ -186,15 +184,12 @@ def _analyze_branch(
     # Get last commit time
     try:
         last_commit = repo.get(branch.target)
-        last_commit_at = datetime.fromtimestamp(
-            last_commit.commit_time,
-            tz=timezone.utc
-        )
+        last_commit_at = datetime.fromtimestamp(last_commit.commit_time, tz=UTC)
     except Exception:
-        last_commit_at = datetime.now(timezone.utc)
+        last_commit_at = datetime.now(UTC)
 
     # Determine parent and divergence point
-    is_default = (branch_name == default_branch_name)
+    is_default = branch_name == default_branch_name
 
     if is_default:
         # Default branch has no parent
@@ -204,7 +199,9 @@ def _analyze_branch(
     else:
         # Non-default branch: find parent and divergence point
         parent_branch = default_branch_name
-        divergence_point_sha = _find_divergence_point(repo, branch_name, default_branch_name)
+        divergence_point_sha = _find_divergence_point(
+            repo, branch_name, default_branch_name
+        )
         created_at = _get_branch_creation_time(repo, branch_name, divergence_point_sha)
 
     return BranchInfo(
@@ -219,9 +216,7 @@ def _analyze_branch(
 
 
 def _find_divergence_point(
-    repo: pygit2.Repository,
-    branch_name: str,
-    parent_branch: str
+    repo: pygit2.Repository, branch_name: str, parent_branch: str
 ) -> str | None:
     """Find where branch diverged from parent using git merge-base."""
     try:
@@ -255,9 +250,7 @@ def _find_divergence_point(
 
 
 def _get_branch_creation_time(
-    repo: pygit2.Repository,
-    branch_name: str,
-    divergence_sha: str | None
+    repo: pygit2.Repository, branch_name: str, divergence_sha: str | None
 ) -> datetime | None:
     """Estimate branch creation time from first commit after divergence."""
     if not divergence_sha:
@@ -286,31 +279,10 @@ def _get_branch_creation_time(
             first_branch_commit = commit
 
         if first_branch_commit:
-            return datetime.fromtimestamp(
-                first_branch_commit.commit_time,
-                tz=timezone.utc
-            )
+            return datetime.fromtimestamp(first_branch_commit.commit_time, tz=UTC)
 
         return None
 
     except Exception as e:
         logger.debug(f"Error estimating creation time for {branch_name}: {e}")
         return None
-
-
-def branch_info_to_dict(branch: BranchInfo, codebase_id: str) -> dict:
-    """Convert BranchInfo to storage dictionary."""
-    return {
-        'codebase_id': codebase_id,
-        'branch_name': branch.name,
-        'head_commit_sha': branch.head_sha,
-        'divergence_point_sha': branch.divergence_point_sha,
-        'parent_branch': branch.parent_branch,
-        'created_at': branch.created_at,
-        'last_commit_at': branch.last_commit_at,
-        'is_default_branch': branch.is_default,
-        'is_active': True,
-        'is_merged': False,
-        'is_deleted': False,
-    }
-

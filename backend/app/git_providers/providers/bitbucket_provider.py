@@ -171,20 +171,6 @@ class BitbucketProvider(GitProviderInterface):
             repos_data = self.api_strategy.list_repositories(workspace, access_token)
             repos = []
             for repo in repos_data:
-                # Fetch latest commit for each repo if needed
-                latest_commit = None
-                # TODO: This seemed to be causing a 429 for workspaces with
-                # many repos. Additional testing is needed to confirm this.
-                # try:
-                #     commit_hash = self.api_strategy.get_latest_commit(
-                #         workspace, repo["slug"], access_token
-                #     )
-                #     latest_commit = {"id": commit_hash}
-                # except Exception as e:
-                #     logger.warning(
-                #         f"Failed to fetch latest commit for {repo['name']}: {e}"
-                #     )
-
                 repos.append(
                     GitRepository(
                         provider_name=str(installation.git_provider_app.provider_kind),
@@ -194,7 +180,7 @@ class BitbucketProvider(GitProviderInterface):
                         repo_name=repo["name"],
                         last_updated=repo.get("updated_on"),
                         default_branch=repo["mainbranch"]["name"],  #
-                        latest_commit=latest_commit,
+                        latest_commit=None,  # To be fetched on-demand
                         metadata={
                             "id": repo["uuid"],  # Store repo ID in metadata
                             "workspace": repo["workspace"]["name"],
@@ -334,6 +320,17 @@ class BitbucketProvider(GitProviderInterface):
         except Exception as e:
             logger.error(f"Failed to register webhook: {e}")
             raise
+
+    def deregister_webhook(
+        self,
+        installation: GitProviderAppInstallation,
+        webhook_id: str,
+    ) -> None:
+        """Deregister webhook - not implemented for Bitbucket Cloud"""
+        raise NotImplementedError(
+            "Webhook deregistration is not yet implemented for Bitbucket Cloud. "
+            "Please delete webhooks manually through the Bitbucket UI."
+        )
 
     def fetch_secrets_by_id(self, installation_id: str) -> dict:
         """Fetch secrets by installation ID"""

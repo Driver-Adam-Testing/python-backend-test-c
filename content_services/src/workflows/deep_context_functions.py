@@ -14,7 +14,7 @@ class MakeChangelogInput(BaseModel):
 
 @hatchet.task(
     name="make-changelog-workflow",
-    execution_timeout=timedelta(minutes=60),
+    execution_timeout=timedelta(minutes=120),
     concurrency=ConcurrencyExpression(
         max_runs=5,
         expression="'make-changelog-workflow'",  # NOTE: must be a string literal to be evaluated as a constant task name

@@ -10,6 +10,7 @@ from shared.interfaces.hatchet_interfaces import InspectorInput
 @hatchet.task(
     name="inspector-workflow",
     execution_timeout=timedelta(minutes=720),
+    schedule_timeout=timedelta(hours=8),
     concurrency=ConcurrencyExpression(
         max_runs=5,
         expression="'inspector-workflow'",  # NOTE: must be a string literal to be evaluated as a constant task name

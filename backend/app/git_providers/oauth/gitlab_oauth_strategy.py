@@ -30,7 +30,7 @@ class GitLabOAuthStrategy:
         url = f"{self.config.base_url}/{self.config.user_endpoint}"
         headers = {"Authorization": f"Bearer {token}"}
         with httpx.Client() as client:
-            response = client.get(url, headers=headers)
+            response = client.get(url, headers=headers, follow_redirects=True)
             response.raise_for_status()  # Raises an exception if the HTTP response status is not successful.
             return response.json()
 

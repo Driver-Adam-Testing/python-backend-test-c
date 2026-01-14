@@ -6,7 +6,6 @@ from typing import Any
 
 from shared.inspector.inspection.files import comprehend_file_top_down
 from shared.inspector.utils.dag import LiteNode
-from shared.inspector.utils.io import download_symbol_table_from_s3_with_cache
 
 
 class TTLCache:
@@ -53,6 +52,9 @@ _symbol_table_cache = TTLCache()
 _top_level_cache = TTLCache()
 _tags_cache = TTLCache()
 _diff_content_cache = TTLCache()
+_source_code_cache = TTLCache()
+_tech_doc_output_cache = TTLCache()
+_folder_child_nodes_to_docs_cache = TTLCache()
 
 
 # Public API - keeps existing interface intact
@@ -104,14 +106,49 @@ def delete_diff_content_cache(key: str) -> None:
     _diff_content_cache.delete(key)
 
 
+def put_source_code_cache(key: str, value: str, ttl_seconds: int = 28800) -> str:
+    return _source_code_cache.put(key, value, ttl_seconds)
+
+
+def get_source_code_cache(key: str) -> str:
+    return _source_code_cache.get(key)
+
+
+def delete_source_code_cache(key: str) -> None:
+    _source_code_cache.delete(key)
+
+
+def put_tech_doc_output_cache(key: str, value: dict, ttl_seconds: int = 28800) -> str:
+    return _tech_doc_output_cache.put(key, value, ttl_seconds)
+
+
+def get_tech_doc_output_cache(key: str) -> dict:
+    return _tech_doc_output_cache.get(key)
+
+
+def delete_tech_doc_output_cache(key: str) -> None:
+    _tech_doc_output_cache.delete(key)
+
+
+def put_folder_child_nodes_to_docs_cache(
+    key: str, value: dict, ttl_seconds: int = 28800
+) -> str:
+    return _folder_child_nodes_to_docs_cache.put(key, value, ttl_seconds)
+
+
+def get_folder_child_nodes_to_docs_cache(key: str) -> dict:
+    return _folder_child_nodes_to_docs_cache.get(key)
+
+
+def delete_folder_child_nodes_to_docs_cache(key: str) -> None:
+    _folder_child_nodes_to_docs_cache.delete(key)
+
+
 def make_tech_doc(
     node: LiteNode,
     codebase_name: str,
-    source_code: str,
     version_id: str,
 ) -> tuple[bool, dict, LiteNode]:
-    import os
-
     from shared.agent.chat_openai import ChatOpenAI
 
     print(f"Processing tech docs ({node})")
@@ -123,22 +160,9 @@ def make_tech_doc(
         request_timeout=FILE_TECH_DOC_LLM_TIMEOUT,
     )
 
-    try:
-        full_symbol_table = get_symbol_table_cache(version_id)
-    except KeyError:
-        # Fallback to loading from S3 if not in cache and adding back to cache
-        import boto3
+    full_symbol_table = get_symbol_table_cache(version_id)
 
-        s3_client = boto3.client(
-            "s3", endpoint_url=os.environ.get("AWS_S3_ENDPOINT_URL")
-        )
-        bucket_name = os.environ.get("INSPECTOR_BUCKET_NAME")
-        full_symbol_table = download_symbol_table_from_s3_with_cache(
-            s3_client,
-            bucket_name=bucket_name,
-            version_id=version_id,
-        )
-        put_symbol_table_cache(version_id, full_symbol_table)
+    source_code = get_source_code_cache(f"{version_id}:{node.root_rel_path}")
     reified_symbols = full_symbol_table.get(node.root_rel_path, None)
 
     file_docs_successful, file_doc = comprehend_file_top_down(

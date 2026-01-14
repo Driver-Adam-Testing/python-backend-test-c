@@ -93,8 +93,7 @@ class Backend(Construct):
         openai_url = None
         if params.is_private_deploy:
             openai_url = aws_ssm.StringParameter.value_from_lookup(
-                scope,
-                parameter_name="/baseline/infra/v2/azure/openai/url"
+                scope, parameter_name="/baseline/infra/v2/azure/openai/url"
             )
 
         self.dropzone_bucket = aws_s3.Bucket(
@@ -139,6 +138,7 @@ class Backend(Construct):
             "IS_PRIVATE_DEPLOY": "true" if params.is_private_deploy else "false",
             "HATCHET_CLIENT_HOST_PORT": f"hatchet.private.{hosted_zone.zone_name}:7077",
             "HATCHET_CLIENT_TLS_STRATEGY": "none",
+            "HATCHET_CLIENT_SERVER_URL": f"http://hatchet.private.{hosted_zone.zone_name}:8080",
             "REDIS_HOST": "hatchet.private." + hosted_zone.zone_name,
             "MCP_STORAGE_BACKEND": "redis",
             # TODO POST secets optimzation. Consider removing all of this and just sourcing the setEnv.sh from deplyonments on container startup.
@@ -324,7 +324,9 @@ class Backend(Construct):
                     "PrivateLinkApiNlb",
                     vpc=self.vpc,
                     internet_facing=False,
-                    vpc_subnets=aws_ec2.SubnetSelection(subnets=private_subnets.subnets),
+                    vpc_subnets=aws_ec2.SubnetSelection(
+                        subnets=private_subnets.subnets
+                    ),
                 )
 
                 privatelink_nlb_target_group = (
@@ -364,7 +366,9 @@ class Backend(Construct):
                     "allowed_principals": allowed_principals,
                 }
                 if params.allowed_privatelink_regions:
-                    endpoint_service_kwargs["allowed_regions"] = params.allowed_privatelink_regions
+                    endpoint_service_kwargs["allowed_regions"] = (
+                        params.allowed_privatelink_regions
+                    )
 
                 self.endpoint_service = aws_ec2.VpcEndpointService(
                     self,
@@ -479,7 +483,9 @@ class Backend(Construct):
             aws_iam.ManagedPolicy.from_aws_managed_policy_name("AmazonS3FullAccess")
         )
         self.service.task_definition.task_role.add_managed_policy(
-            aws_iam.ManagedPolicy.from_aws_managed_policy_name("SecretsManagerReadWrite")
+            aws_iam.ManagedPolicy.from_aws_managed_policy_name(
+                "SecretsManagerReadWrite"
+            )
         )
 
         # Create private hosted zone entry for internal VPC routing

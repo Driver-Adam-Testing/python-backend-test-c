@@ -52,4 +52,20 @@ def load_provider_config(
             token_info_endpoint=None,
             scope=app.scopes,
         )
+    elif app.provider_kind == GitProviderKind.BITBUCKET_DATA_CENTER:
+        return GitProviderConfig(
+            application_id=app.id,
+            name=app.name,
+            provider_kind=app.provider_kind,
+            base_url=app.base_url,  # Customer's self-hosted instance URL
+            client_id=None,
+            client_secret=None,
+            redirect_uri=None,
+            # Bitbucket DC uses HTTP Access Tokens, not OAuth
+            token_endpoint=None,
+            user_endpoint=None,
+            authorize_endpoint=None,
+            token_info_endpoint=None,
+            scope=None,
+        )
     raise ValueError(f"Unsupported provider: {app.provider_kind}")

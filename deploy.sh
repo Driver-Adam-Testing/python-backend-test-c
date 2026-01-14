@@ -108,6 +108,8 @@ HATCHET_BASE_WORKER_SERVICE_NAME=$(aws ecs list-services --cluster $CLUSTER_NAME
 
 HATCHET_HEAVY_WORKER_SERVICE_NAME=$(aws ecs list-services --cluster $CLUSTER_NAME --query "serviceArns[?contains(@, 'DriverApiStack-HatchetHeavyWorkerHatchetWorkerSvc')]" --output text)
 
+HATCHET_ANALYTICS_WORKER_SERVICE_NAME=$(aws ecs list-services --cluster $CLUSTER_NAME --query "serviceArns[?contains(@, 'DriverApiStack-HatchetAnalyticsWorkerHatchetWorkerSvc')]" --output text)
+
 SCIM_SERVER_SERVICE_NAME=$(aws ecs list-services --cluster $CLUSTER_NAME --query "serviceArns[?contains(@, 'DriverApiStack-SCIMServer')]" --output text)
 
 if [ "$BACKEND_PUSHED" = "true" ]; then
@@ -121,6 +123,7 @@ if [ "$HATCHET_WORKER_PUSHED" = "true" ]; then
 
     aws --no-cli-pager ecs update-service --cluster $CLUSTER_NAME --service $HATCHET_BASE_WORKER_SERVICE_NAME --force-new-deployment > /dev/null
     aws --no-cli-pager ecs update-service --cluster $CLUSTER_NAME --service $HATCHET_HEAVY_WORKER_SERVICE_NAME --force-new-deployment > /dev/null
+    aws --no-cli-pager ecs update-service --cluster $CLUSTER_NAME --service $HATCHET_ANALYTICS_WORKER_SERVICE_NAME --force-new-deployment > /dev/null
 fi
 
 echo "Forcing SCIM server redeploy..."

@@ -1,6 +1,4 @@
-import json
 from aws_cdk import (
-    CfnOutput,
     Duration,
     Stack,
     aws_ec2,
@@ -13,9 +11,9 @@ from aws_cdk import (
     aws_s3,
     aws_secretsmanager,
     aws_ssm,
-    RemovalPolicy,
 )
 from constructs import Construct
+
 from cdk.settings import settings
 
 
@@ -32,6 +30,7 @@ class HatchetWorkerParams:
         mem_size: int,
         min_instance: int,
         workflow_set_name: str,
+        stop_timeout_seconds: int = 120,
     ) -> None:
         self.environment = environment
         self.aws_region = aws_region
@@ -43,7 +42,7 @@ class HatchetWorkerParams:
         self.mem_size = mem_size
         self.min_instance = min_instance
         self.workflow_set_name = workflow_set_name
-    
+        self.stop_timeout_seconds = stop_timeout_seconds
 
 
 class HatchetWorker(Construct):
@@ -79,8 +78,7 @@ class HatchetWorker(Construct):
         openai_url = None
         if params.is_private_deploy:
             openai_url = aws_ssm.StringParameter.value_from_lookup(
-                scope,
-                parameter_name="/baseline/infra/v2/azure/openai/url"
+                scope, parameter_name="/baseline/infra/v2/azure/openai/url"
             )
 
         inspector_bucket_name = aws_ssm.StringParameter.value_from_lookup(
@@ -91,13 +89,12 @@ class HatchetWorker(Construct):
             "PROJECT_NAME": "DriverAI Hatchet Worker",
             "ENVIRONMENT": params.environment,
             "AWS_REGION": params.aws_region,
-            "ECS_CONTAINER_STOP_TIMEOUT": "2s",
-            "HATCHET_CLIENT_HOST_PORT" : f"hatchet.private.{hosted_zone.zone_name}:7077",
+            "HATCHET_CLIENT_HOST_PORT": f"hatchet.private.{hosted_zone.zone_name}:7077",
             "INSPECTOR_BUCKET_NAME": inspector_bucket_name,
             "DROPZONE_BUCKET_NAME": params.dropzone_bucket.bucket_name,
             "HATCHET_CLIENT_GRPC_MAX_RECV_MESSAGE_LENGTH": "100000000",
             "HATCHET_CLIENT_GRPC_MAX_SEND_MESSAGE_LENGTH": "100000000",
-            "WORKFLOW_SET_NAME": params.workflow_set_name
+            "WORKFLOW_SET_NAME": params.workflow_set_name,
         }
 
         if params.is_private_deploy:
@@ -120,7 +117,9 @@ class HatchetWorker(Construct):
             k: aws_ecs.Secret.from_secrets_manager(deployment_secrets, field=k)
             for k in secret_fields
         }
-        secrets_map["HATCHET_CLIENT_TOKEN"] = aws_ecs.Secret.from_secrets_manager(hatchet_token_secrect)
+        secrets_map["HATCHET_CLIENT_TOKEN"] = aws_ecs.Secret.from_secrets_manager(
+            hatchet_token_secrect
+        )
 
         base_env.update(settings.to_dict())
 
@@ -134,11 +133,11 @@ class HatchetWorker(Construct):
             ),
         )
 
-        worker_container = worker_task_def.add_container(
+        _worker_container = worker_task_def.add_container(
             "HatchetWorkerContainer",
             image=aws_ecs.ContainerImage.from_ecr_repository(
                 aws_ecr.Repository.from_repository_name(
-                    self, "HatchetWorkerRepo", "hatchet-worker" 
+                    self, "HatchetWorkerRepo", "hatchet-worker"
                 ),
                 tag="latest",
             ),
@@ -148,6 +147,7 @@ class HatchetWorker(Construct):
                 stream_prefix="python-worker",
                 log_retention=aws_logs.RetentionDays.ONE_YEAR,
             ),
+            stop_timeout=Duration.seconds(params.stop_timeout_seconds),
         )
         # Optional: a port for metrics/debugging
         # worker_container.add_port_mappings(aws_ecs.PortMapping(container_port=9000))
@@ -183,10 +183,10 @@ class HatchetWorker(Construct):
             task_definition=worker_task_def,
             desired_count=params.min_instance,
             assign_public_ip=False,
-            vpc_subnets=aws_ec2.SubnetSelection(
-                subnet_group_name="Private"
+            vpc_subnets=aws_ec2.SubnetSelection(subnet_group_name="Private"),
+            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(
+                enable=True, rollback=True
             ),
-            circuit_breaker=aws_ecs.DeploymentCircuitBreaker(enable=True, rollback=True),
             min_healthy_percent=100,
             max_healthy_percent=200,
         )
@@ -220,14 +220,19 @@ class HatchetWorker(Construct):
             aws_iam.ManagedPolicy.from_aws_managed_policy_name("AmazonS3FullAccess")
         )
         worker_task_def.task_role.add_managed_policy(
-            aws_iam.ManagedPolicy.from_aws_managed_policy_name("SecretsManagerReadWrite")
+            aws_iam.ManagedPolicy.from_aws_managed_policy_name(
+                "SecretsManagerReadWrite"
+            )
         )
         # Add explicit perms for dropzone bucket in the event we scope down S3 full access
         params.dropzone_bucket.grant_read_write(worker_task_def.task_role)
 
         if settings.IS_PRIVATE_DEPLOY == "true":
             firewall_cert_secret = aws_secretsmanager.Secret.from_secret_name_v2(
-                self, "FirewallCertSecret", secret_name="/network-firewall/ca-certificate"
+                self,
+                "FirewallCertSecret",
+                secret_name="/network-firewall/ca-certificate",
             )
-            firewall_cert_secret.grant_read(self.worker_service.task_definition.task_role)
-
+            firewall_cert_secret.grant_read(
+                self.worker_service.task_definition.task_role
+            )

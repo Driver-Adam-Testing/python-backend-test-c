@@ -5,11 +5,10 @@ from pydantic import BaseModel, Field
 
 
 class TokenType(str, Enum):
-    # OAUTH = "oauth"
     GROUP_ACCESS_TOKEN = "group_access_token"  # GitLab
-    WORKSPACE_ACCESS_TOKEN = "workspace_access_token"  # Bitbucket
-    PROJECT_ACCESS_TOKEN = "project_access_token"  # Bitbucket
-    REPOSITORY_ACCESS_TOKEN = "repository_access_token"  # Bitbucket
+    WORKSPACE_ACCESS_TOKEN = "workspace_access_token"  # Bitbucket Cloud
+    PROJECT_ACCESS_TOKEN = "project_access_token"  # Bitbucket Cloud & Data Center
+    REPOSITORY_ACCESS_TOKEN = "repository_access_token"  # Bitbucket Cloud & Data Center
     PERSONAL_ACCESS_TOKEN = "personal_access_token"  # Azure DevOps
 
     def __str__(self) -> str:
@@ -24,6 +23,9 @@ class AccessTokenData(BaseModel):
     workspace_or_group: str | None = None
     name: str | None = None
     metadata: dict = {}
+    # Bitbucket DC specific fields (optional, will be populated from app config if not provided)
+    username: str | None = None
+    instance_url: str | None = None
 
     def is_access_token(self) -> bool:
         return self.token_type in [
@@ -44,7 +46,7 @@ class GitRepository(BaseModel):
     provider_kind: GitProviderKind | None = None
     repo_name: str
     org: str
-    last_updated: str
+    last_updated: str | None = None
     metadata: dict
     latest_commit: dict | None = None
     default_branch: str | None = None
@@ -134,3 +136,40 @@ class AzureDevOpsWebhookPayload(BaseModel):
 
     eventType: str
     resource: AzureDevOpsWebhookResource | None = None
+
+
+# Bitbucket Data Center specific models
+class BitbucketDCTokenData(BaseModel):
+    """Bitbucket Data Center HTTP Access Token data structure.
+
+    For Project/Repository tokens, we use Bearer auth only (no username needed).
+    Clone URLs use x-token-auth as the username placeholder.
+
+    token_type determines the scope of the token:
+    - PROJECT_ACCESS_TOKEN: Can access all repos in a project, create project webhooks
+    - REPOSITORY_ACCESS_TOKEN: Can only access a specific repo, create repo webhooks
+    """
+
+    token: str = Field(..., description="HTTP Access Token")
+    name: str | None = Field(None, description="Token name for identification")
+    token_type: TokenType = Field(
+        default=TokenType.PROJECT_ACCESS_TOKEN,
+        description="Type of token (project_access_token or repository_access_token)",
+    )
+    # For repository tokens, store the project/repo scope
+    project_key: str | None = Field(
+        None,
+        description="Project key (required for project tokens, optional for repo tokens)",
+    )
+    repo_slug: str | None = Field(
+        None, description="Repository slug (required for repository tokens)"
+    )
+    secret_token: str | None = Field(
+        None, description="Webhook secret for signature verification"
+    )
+    ca_bundle_path: str | None = Field(
+        None, description="Path to CA bundle for self-signed certificates"
+    )
+    disable_ssl_verify: bool = Field(
+        False, description="Disable SSL verification (dev/test only)"
+    )

@@ -1,4 +1,5 @@
 import json
+import time
 from urllib.request import urlopen
 
 import jwt
@@ -19,7 +20,15 @@ ALGORITHMS = ["RS256"]
 def get_jwks() -> dict:
     """Fetch Auth0 JWKS (memoised for 1 hour)."""
     jwks_url = f"https://{settings.AUTH0_DOMAIN}/.well-known/jwks.json"
-    return json.loads(urlopen(jwks_url).read())
+    last_exc = None
+    for attempt in range(3):
+        try:
+            return json.loads(urlopen(jwks_url).read())
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(1)
+    raise last_exc
 
 
 def _get_rsa_key(jwks: dict, kid: str) -> dict:

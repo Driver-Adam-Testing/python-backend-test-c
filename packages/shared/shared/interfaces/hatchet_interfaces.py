@@ -56,6 +56,14 @@ class HandleAzureDevopsEventsInput(BaseModel):
     repos_pushed: list[dict]
 
 
+class HandleBitbucketDCEventsInput(BaseModel):
+    installation_id: str | None
+    org_id: str
+    repos_added: list[dict]
+    repos_deleted: list[dict]
+    repos_pushed: list[dict]
+
+
 class ConnectReposForInstallationInput(BaseModel):
     github_installation_id: str
 

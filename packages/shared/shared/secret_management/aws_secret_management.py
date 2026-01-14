@@ -13,8 +13,7 @@ class AWSSecretManagementStrategy:
         self.config = config
         session = boto3.session.Session()
         self.client = session.client(
-            service_name="secretsmanager",
-            region_name=self.config.region_name
+            service_name="secretsmanager", region_name=self.config.region_name
         )
 
     def write_secret(self, secret_name: str, secret_value: str) -> None:
@@ -50,7 +49,13 @@ class AWSSecretManagementStrategy:
             return None
 
     def delete_secret(self, secret_name: str) -> None:
-        self.client.delete_secret(SecretId=secret_name, RecoveryWindowInDays=7)
+        try:
+            self.client.delete_secret(SecretId=secret_name, RecoveryWindowInDays=7)
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                logger.info(f"Secret {secret_name} not found, skipping deletion.")
+                return
+            raise
 
 
 def format_secret_name(prefix: str, suffix: str) -> str:

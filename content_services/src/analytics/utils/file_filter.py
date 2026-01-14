@@ -55,6 +55,100 @@ BLACKLIST_FILENAMES = {
     ".driverignore",
 }
 
+# Extensions where language syntax guarantees non-hex content.
+# These can skip hex detection entirely for performance.
+# Excluded: .h, .c, .cpp, .hpp, .cc (could be auto-generated hex arrays in embedded)
+# Excluded: .asm, .s, .S (assembly could be hex opcodes)
+SKIP_HEX_EXTENSIONS = {
+    # Scripting languages (require keywords like def, class, import, etc.)
+    ".py",
+    ".rb",
+    ".pl",
+    ".pm",
+    ".lua",
+    ".r",
+    ".R",
+    ".php",
+    # JVM languages (require public, class, fun, def, etc.)
+    ".java",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".clj",
+    ".cljs",
+    ".groovy",
+    # JavaScript/TypeScript (require function, const, let, =>, etc.)
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".mjs",
+    ".cjs",
+    ".vue",
+    ".svelte",
+    # Systems languages (non-C family)
+    ".go",
+    ".rs",
+    ".swift",
+    # Functional languages
+    ".hs",
+    ".ml",
+    ".mli",
+    ".ex",
+    ".exs",
+    ".erl",
+    ".hrl",
+    ".fs",
+    ".fsx",
+    ".fsi",
+    # Shell scripts (require $, |, if/then/fi, etc.)
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".ps1",
+    ".psm1",
+    # Config/markup (have punctuation like {}, [], :, <>, etc.)
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".xml",
+    ".html",
+    ".htm",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    # Editor/tooling
+    ".vim",
+    ".el",
+    ".md",
+    ".rst",
+    ".tex",
+    # SQL and query languages
+    ".sql",
+    ".graphql",
+    ".gql",
+}
+
+
+def can_skip_hex_check(extension: str) -> bool:
+    """
+    Check if hex detection can be skipped for this extension.
+
+    These are extensions where language syntax guarantees the file
+    cannot be a pure hex dump (>99% hex characters).
+
+    Args:
+        extension: File extension including dot (e.g., '.py')
+
+    Returns:
+        True if hex check can be safely skipped
+    """
+    return extension.lower() in SKIP_HEX_EXTENSIONS
+
+
 # Hex detection - matches inspector's evaluate_file_hex logic
 # The inspector uses 99% threshold and includes whitespace (newlines, spaces)
 # in the "allowed hex characters" pattern. This detects firmware/hex dump files.

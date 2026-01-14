@@ -133,6 +133,10 @@ async def inspect_db(
     try:
         # Get the Version and check if it has previous_version_id
         version = await get_version_by_id(version_id)
+
+        if version.status == VersionStatus.GENERATION_ERROR:
+            set_codebase_status(version_id, VersionStatus.GENERATING)
+
         org_id = version.primary_asset.organization_id
         org_hashed_id = hashlib.sha256(org_id.encode()).hexdigest()[:63]
 
@@ -547,6 +551,7 @@ async def inspect_files(
                     task_name=f"FolderTechDoc {node.root_rel_path}",
                     child_docs_tasks=child_doc_tasks,
                     codebase_name=codebase_name,
+                    version_id=str(version_id),
                     db_version_node_id=db_version_node_id,
                     previous_content=previous_contents,
                     deduped_node_task=node_id_to_folder_task[node_id],
@@ -558,6 +563,7 @@ async def inspect_files(
                 task_name=f"FolderTechDoc {node.root_rel_path}",
                 child_docs_tasks=child_doc_tasks,
                 codebase_name=codebase_name,
+                version_id=str(version_id),
                 db_version_node_id=db_version_node_id,
                 previous_content=previous_contents,
             )

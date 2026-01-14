@@ -52,7 +52,7 @@ def _create_git_provider_grants(
             role=PrimaryAssetRole.asset_member,
         )
         session.add(grant)
-        print(f"INFO: Created internal visibility grant for asset {primary_asset_id}")
+        logger.info(f"Created internal visibility grant for asset {primary_asset_id}")
     elif visibility == SourceVisibility.public:
         grant = PrimaryAssetRoleGrant(
             primary_asset_id=primary_asset_id,
@@ -61,7 +61,7 @@ def _create_git_provider_grants(
             role=PrimaryAssetRole.asset_member,
         )
         session.add(grant)
-        print(f"INFO: Created public visibility grant for asset {primary_asset_id}")
+        logger.info(f"Created public visibility grant for asset {primary_asset_id}")
 
 
 logger = logging.getLogger(__name__)
@@ -70,12 +70,10 @@ API_VERSION = "7.2-preview"
 
 
 def fetch_access_token(installation_id: str) -> str:
-    print(f"INFO: Fetching Personal Access Token for installation ID {installation_id}")
+    logger.info(f"Fetching Personal Access Token for installation ID {installation_id}")
     install_key = format_secret_name("GIT_PROVIDER_PAT_INSTALL_SECRET", installation_id)
     secrets_manager = AWSSecretManagementStrategy(
-        AWSClientConfig(
-            region_name=os.environ["AWS_REGION"]
-        )
+        AWSClientConfig(region_name=os.environ["AWS_REGION"])
     )
     secret_value = secrets_manager.read_secret(install_key)
     if not secret_value:
@@ -111,8 +109,8 @@ def download_repo(
         "download": "true",
     }
 
-    print(
-        f"INFO: Downloading Azure DevOps repository {organization}/{project}/{repo_id} at commit {commit}"
+    logger.info(
+        f"Downloading Azure DevOps repository {organization}/{project}/{repo_id} at commit {commit}"
     )
 
     response = requests.get(
@@ -202,8 +200,8 @@ def fetch_vcs_info(
     )
     repo_response.raise_for_status()
     repo_data = repo_response.json()
-    print(
-        f"INFO: Repo information retrieved from Azure DevOps API (status code {repo_response.status_code}): {repo_data}"
+    logger.info(
+        f"Repo information retrieved from Azure DevOps API (status code {repo_response.status_code}): {repo_data}"
     )
 
     default_branch = repo_data["defaultBranch"].replace("refs/heads/", "")
@@ -222,8 +220,8 @@ def fetch_vcs_info(
     commit_response.raise_for_status()
     commit_data = commit_response.json()
 
-    print(
-        f"INFO: Commit data retrieved from Azure DevOps API (status code {commit_response.status_code})"
+    logger.info(
+        f"Commit data retrieved from Azure DevOps API (status code {commit_response.status_code})"
     )
 
     author_info = AuthorInfo(
@@ -306,13 +304,13 @@ def download_and_upload_repo(
     installation_id = repo.get("installation_id")
 
     if not repo_id:
-        print(f"Missing repo_id in repo data: {repo}")
+        logger.error(f"Missing repo_id in repo data: {repo}")
         return repo_name or "unknown"
     if not repo_name:
-        print(f"Missing repo_name in repo data: {repo}")
+        logger.error(f"Missing repo_name in repo data: {repo}")
         return "unknown"
     if not installation_id:
-        print(f"Missing installation_id for repo {repo_name}")
+        logger.error(f"Missing installation_id for repo {repo_name}")
         return repo_name
 
     try:
@@ -326,8 +324,8 @@ def download_and_upload_repo(
             # Get the base_url - should be https://dev.azure.com/{organization}
             base_url = app_install.git_provider_app.base_url
             if not base_url:
-                print(
-                    f"ERROR: No base_url found in GitProviderApp for installation {installation_id}"
+                logger.error(
+                    f"No base_url found in GitProviderApp for installation {installation_id}"
                 )
                 return repo_name
 
@@ -337,7 +335,7 @@ def download_and_upload_repo(
                     "/"
                 )
             else:
-                print(f"ERROR: Invalid base_url format: {base_url}")
+                logger.error(f"Invalid base_url format: {base_url}")
                 return repo_name
 
             # Extract project from repo metadata
@@ -348,7 +346,7 @@ def download_and_upload_repo(
                 project = str(project_metadata) if project_metadata else ""
 
             if not project:
-                print(f"ERROR: Could not determine project from metadata: {metadata}")
+                logger.error(f"Could not determine project from metadata: {metadata}")
                 return repo_name
 
             commit = None
@@ -393,7 +391,7 @@ def download_and_upload_repo(
                     .options(selectinload(PrimaryAsset.versions))
                 ).first()
                 if not primary_asset:
-                    print(
+                    logger.error(
                         f"Failed to find primary asset for {repo_name} for org: {org_id}, unable to process push event"
                     )
                     return repo_name
@@ -443,7 +441,7 @@ def download_and_upload_repo(
                             break
                         elif version.status == VersionStatus.GENERATING:
                             # STOPGAP: Ignore push events during active generation to ensure completion
-                            print(
+                            logger.warning(
                                 f"Generation already in progress for {repo.get('name', 'unknown')}. "
                                 f"Ignoring push event to allow current generation to complete."
                             )
@@ -453,7 +451,7 @@ def download_and_upload_repo(
                     primary_asset.versions
                     and primary_asset.versions[0].status == VersionStatus.CONNECTING
                 ):
-                    print(
+                    logger.info(
                         f"Version already in connecting state for {repo_name}, skipping..."
                     )
                     return repo_name
@@ -486,12 +484,12 @@ def download_and_upload_repo(
 
                 _create_git_provider_grants(session, primary_asset_id, org_id)
 
-                print(
+                logger.info(
                     f"Creating primary asset and version for {repo_name}:{commit} for org: {org_id}. Version ID: {version_id}"
                 )
 
     except IntegrityError:
-        print(
+        logger.error(
             f"Failed to create primary asset and version {repo_name}:{commit} for org: {org_id}"
         )
         return repo_name
@@ -518,10 +516,11 @@ def download_and_upload_repo(
             commit=commit,
             access_token=access_token,
         )
-        print(f"Repository downloaded successfully. Size: {len(zip_content)} bytes")
+        logger.info(
+            f"Repository downloaded successfully. Size: {len(zip_content)} bytes"
+        )
     except Exception as e:
-        print(f"ERROR: Failed to download repo {repo_name}: {e}")
-        logger.exception(f"Error downloading Azure DevOps repo {repo_name}")
+        logger.exception(f"Failed to download repo {repo_name}: {e}")
         return repo_name
 
     try:
@@ -530,13 +529,12 @@ def download_and_upload_repo(
             f"assets/{org_hashed_id}/{primary_asset_id}/{version_id}/{repo_name}.zip"
         )
         upload_to_s3_with_metadata(zip_content, metadata, upload_key)
-        print(f"Repository {repo_name} uploaded successfully to {upload_key}.")
+        logger.info(f"Repository {repo_name} uploaded successfully to {upload_key}.")
     except Exception as e:
-        print(f"ERROR: Failed to upload {repo_name} to S3: {e}")
-        logger.exception(f"Error uploading Azure DevOps repo {repo_name}")
+        logger.exception(f"Failed to upload {repo_name} to S3: {e}")
         return repo_name
 
-    print(f"INFO: Successfully processed {repo_name}")
+    logger.info(f"Successfully processed {repo_name}")
     return None
 
 
@@ -657,7 +655,7 @@ def close_pull_request(
 
         # Check if PR is already closed
         if status in ["completed", "abandoned"]:
-            print(f"INFO: Pull request #{pr_id} is already {status}")
+            logger.info(f"Pull request #{pr_id} is already {status}")
             return
 
     # Update PR to abandon it
@@ -673,9 +671,8 @@ def close_pull_request(
 
     try:
         response.raise_for_status()
-        print(f"Closed pull request #{pr_id}")
+        logger.info(f"Closed pull request #{pr_id}")
     except requests.HTTPError as e:
-        print(f"Failed to close pull request #{pr_id}: {e}")
         # Get more details about the error
         error_detail = ""
         try:
@@ -684,7 +681,7 @@ def close_pull_request(
         except (ValueError, AttributeError):
             error_detail = f" - {e.response.text}"
 
-        print(f"Failed to close pull request #{pr_id}: {e}{error_detail}")
+        logger.error(f"Failed to close pull request #{pr_id}: {e}{error_detail}")
         raise
 
 
@@ -723,12 +720,12 @@ def create_pull_request(
         response.raise_for_status()
         pr_response = response.json()
         pr_url = pr_response.get("url", "")
-        print(f"Pull request created successfully: {pr_url}")
+        logger.info(f"Pull request created successfully: {pr_url}")
     except requests.HTTPError as e:
         if e.response.status_code == 409:
             error_detail = e.response.json()
             if "already exists" in str(error_detail).lower():
-                print("Pull request already exists for this branch")
+                logger.info("Pull request already exists for this branch")
             else:
                 raise
         else:
@@ -746,7 +743,7 @@ def create_pull_request_with_bot_cleanup(
     BOT_NAME = "docs-bot"
     BOT_EMAIL = "bot@driverai.com"
 
-    print("Checking for existing bot pull requests...")
+    logger.info("Checking for existing bot pull requests...")
 
     existing_prs = list_pull_requests(base_url, project, repo_id, access_token)
 
@@ -773,7 +770,7 @@ def create_pull_request_with_bot_cleanup(
 
             if is_bot_pr:
                 close_pull_request(base_url, project, repo_id, pr_id, access_token)
-                print(
+                logger.info(
                     f"Closed existing bot PR #{pr_id} from branch {source_branch_name}"
                 )
 

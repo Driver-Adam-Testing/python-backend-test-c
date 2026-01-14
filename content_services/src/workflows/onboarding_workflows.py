@@ -6,6 +6,7 @@ from hatchet_sdk.runnables.types import ConcurrencyExpression, ConcurrencyLimitS
 from onboarding.onboard import (
     connect_repos_for_installation,
     handle_azure_devops_events,
+    handle_bitbucket_dc_events,
     handle_bitbucket_events,
     handle_github_events,
     handle_gitlab_events,
@@ -14,6 +15,7 @@ from onboarding.onboard import (
 from shared.interfaces.hatchet_interfaces import (
     ConnectReposForInstallationInput,
     HandleAzureDevopsEventsInput,
+    HandleBitbucketDCEventsInput,
     HandleBitbucketEventsInput,
     HandleGithubEventsInput,
     HandleGitlabEventsInput,
@@ -110,6 +112,29 @@ def handle_azure_devops_events_task(
 
 
 @hatchet.task(
+    name="handle-bitbucket-dc-events-workflow",
+    execution_timeout=timedelta(minutes=60),
+    concurrency=ConcurrencyExpression(
+        max_runs=5,
+        expression="'handle-bitbucket-dc-events-workflow'",  # NOTE: must be a string literal to be evaluated as a constant task name
+        limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
+    ),
+)
+def handle_bitbucket_dc_events_task(
+    input: HandleBitbucketDCEventsInput, ctx: Context
+) -> None:
+    print("starting handle bitbucket dc events task")
+    handle_bitbucket_dc_events(
+        input.installation_id,
+        input.org_id,
+        input.repos_added,
+        input.repos_deleted,
+        input.repos_pushed,
+    )
+    print("executed handle bitbucket dc events task")
+
+
+@hatchet.task(
     name="connect-repos-for-installation-workflow",
     execution_timeout=timedelta(minutes=60),
     concurrency=ConcurrencyExpression(
@@ -134,6 +159,7 @@ def connect_repos_for_installation_task(
         expression="'run-codebase-connection-workflow'",  # NOTE: must be a string literal to be evaluated as a constant task name
         limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
     ),
+    schedule_timeout=timedelta(hours=1),
 )
 def run_codebase_connection_task(
     input: RunCodebaseConnectionInput, ctx: Context

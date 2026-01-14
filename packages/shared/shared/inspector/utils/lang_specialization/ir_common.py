@@ -316,6 +316,8 @@ class ListData(BaseModel):
             user_prompt=user_prompt_complete,
             output_cfg=OutputConfig(kind=OutputConfigKind.JSON_STRICT, payload=cls),
         )
+        if content_raw is None:
+            return None
 
         return cls.parse_raw(content_raw)
 
@@ -396,6 +398,8 @@ class IrData(BaseModel, abc.ABC):
                         kind=OutputConfigKind.JSON_STRICT, payload=cls
                     ),
                 )
+                if content_raw is None:
+                    return None
 
                 # Kept here for debugging in the future.
                 # print("System Prompt: ", system_prompt)

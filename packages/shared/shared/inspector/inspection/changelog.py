@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import tempfile
 from enum import StrEnum
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 from shared.agent.chat_openai_async import ChatOpenAI, OutputConfig, OutputConfigKind
 from shared.inspector.onboarding import (
     azure_devops_ops,
+    bitbucket_dc_ops,
     bitbucket_ops,
     gh_ops,
     gitlab_ops,
@@ -475,17 +477,60 @@ async def _prepare_repo_for_changelog(
         clone_url, full_name = azure_devops_ops.get_repo_clone_info_from_id(
             base_url, project, repo_id, access_token
         )
+    elif provider == PrimaryAssetProvider.BITBUCKET_DATA_CENTER:
+        # Bitbucket DC uses Bearer auth via git http.extraHeader
+        # Fetch full secrets for SSL configuration
+        # Note: fetch_secrets applies BITBUCKET_DC_INSTANCE_URL env var override if set
+        secrets = bitbucket_dc_ops.fetch_secrets(install_id)
+        access_token = secrets["token"]
+        instance_url = secrets.get("instance_url", "")
+        disable_ssl_verify = secrets.get("disable_ssl_verify", False)
+        ca_bundle_path = secrets.get("ca_bundle_path")
+
+        vcs_metadata = version.vcs_metadata or {}
+        project_key = vcs_metadata.get("project_key", "")
+        if not project_key:
+            project_key = vcs_metadata.get("repository", {}).get("namespace", "")
+        repo_slug = repo_name.lower().replace(" ", "-")
+        clone_url, full_name = bitbucket_dc_ops.get_repo_clone_info_from_id(
+            instance_url, project_key, repo_slug
+        )
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
     repo_dir = Path(temp_dir) / full_name
-    result = subprocess.run(
-        ["git", "clone", clone_url, str(repo_dir)],
-        cwd=None,
-        capture_output=True,
-        text=True,
-    )
+
+    # Bitbucket DC requires Bearer auth via git http.extraHeader and SSL handling
+    if provider == PrimaryAssetProvider.BITBUCKET_DATA_CENTER:
+        env = os.environ.copy()
+        if disable_ssl_verify:
+            env["GIT_SSL_NO_VERIFY"] = "true"
+        elif ca_bundle_path:
+            env["GIT_SSL_CAINFO"] = ca_bundle_path
+
+        result = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"http.extraHeader=Authorization: Bearer {access_token}",
+                "clone",
+                clone_url,
+                str(repo_dir),
+            ],
+            cwd=None,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    else:
+        result = subprocess.run(
+            ["git", "clone", clone_url, str(repo_dir)],
+            cwd=None,
+            capture_output=True,
+            text=True,
+        )
     if result.returncode != 0:
+        print(f"Git clone failed for {clone_url}: {result.stderr}")
         raise subprocess.CalledProcessError(
             result.returncode, f"git clone {clone_url} {repo_dir}"
         )

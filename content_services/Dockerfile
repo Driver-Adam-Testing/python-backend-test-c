@@ -1,3 +1,22 @@
+# Stage 1: Build Rust native extension
+FROM --platform=linux/amd64 python:3.12-slim AS rust-builder
+
+RUN apt-get update && \
+    apt-get install -y curl build-essential libssl-dev pkg-config patchelf libgit2-dev && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN pip install maturin
+
+WORKDIR /build
+COPY content_services/native /build/native
+RUN cd /build/native && maturin build --release
+
+
+# Stage 2: Runtime image
 # Build context: workspace root (driver-ai-app/)
 # Usage: docker build -f content_services/Dockerfile -t content-services .
 
@@ -36,6 +55,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY content_services /app
 COPY backend/scripts/ /app/scripts/
 COPY content_services/src/inspector/uctags-2024.10.02-linux-x86_64/bin/ctags /ctags
+
+# Copy and install the pre-built Rust wheel from builder stage
+COPY --from=rust-builder /build/native/target/wheels/*.whl /tmp/
+RUN pip install /tmp/*.whl && rm -rf /tmp/*.whl
 
 COPY content_services/start.sh /start.sh
 RUN chmod +x /start.sh

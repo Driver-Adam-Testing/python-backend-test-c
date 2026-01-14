@@ -117,4 +117,8 @@ class ChatOpenAI:
                     },
                 ],
             )
-        return response.choices[0].message.content.replace("\x00", "")
+        content = response.choices[0].message.content
+        if content is None:
+            return None
+
+        return content.replace("\x00", "")

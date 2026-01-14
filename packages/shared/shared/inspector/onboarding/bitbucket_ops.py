@@ -53,7 +53,7 @@ def _create_git_provider_grants(
             role=PrimaryAssetRole.asset_member,
         )
         session.add(grant)
-        print(f"INFO: Created internal visibility grant for asset {primary_asset_id}")
+        logger.info(f"Created internal visibility grant for asset {primary_asset_id}")
     elif visibility == SourceVisibility.public:
         grant = PrimaryAssetRoleGrant(
             primary_asset_id=primary_asset_id,
@@ -62,16 +62,16 @@ def _create_git_provider_grants(
             role=PrimaryAssetRole.asset_member,
         )
         session.add(grant)
-        print(f"INFO: Created public visibility grant for asset {primary_asset_id}")
+        logger.info(f"Created public visibility grant for asset {primary_asset_id}")
 
 
 def fetch_access_token(installation_id: str) -> str:
-    print(f"Fetching workspace access token for installation ID {installation_id}")
+    logger.info(
+        f"Fetching workspace access token for installation ID {installation_id}"
+    )
     install_key = format_secret_name("GIT_PROVIDER_WAT_INSTALL_SECRET", installation_id)
     secrets_manager = AWSSecretManagementStrategy(
-        AWSClientConfig(
-            region_name=os.environ["AWS_REGION"]
-        )
+        AWSClientConfig(region_name=os.environ["AWS_REGION"])
     )
     secret_value = secrets_manager.read_secret(install_key)
     if not secret_value:
@@ -104,7 +104,7 @@ def download_repo(
     import zipfile
     from pathlib import Path
 
-    print(
+    logger.info(
         f"Using git clone to download repository {workspace}/{repo_slug} at commit {commit}"
     )
 
@@ -116,7 +116,7 @@ def download_repo(
 
         try:
             # Try to clone with shallow depth at specific commit
-            print(f"Attempting to clone repository at commit {commit}...")
+            logger.info(f"Attempting to clone repository at commit {commit}...")
 
             # First, try a shallow clone of the specific commit
             clone_cmd = [
@@ -135,10 +135,12 @@ def download_repo(
             )
 
             if clone_result.returncode != 0:
-                print(f"Clone failed: {clone_result.stderr}")
+                logger.error(f"Clone failed: {clone_result.stderr}")
                 raise Exception(f"Failed to clone repository: {clone_result.stderr}")
 
-            print("Repository cloned successfully, checking out specific commit...")
+            logger.info(
+                "Repository cloned successfully, checking out specific commit..."
+            )
 
             # Checkout the specific commit
             checkout_result = subprocess.run(
@@ -149,11 +151,11 @@ def download_repo(
             )
 
             if checkout_result.returncode != 0:
-                print(
-                    f"Warning: Could not checkout commit {commit}: {checkout_result.stderr}"
+                logger.warning(
+                    f"Could not checkout commit {commit}: {checkout_result.stderr}"
                 )
                 # Try fetching the commit first
-                print("Fetching all commits and trying again...")
+                logger.info("Fetching all commits and trying again...")
 
                 subprocess.run(
                     ["git", "fetch", "--unshallow"],
@@ -171,12 +173,12 @@ def download_repo(
                 )
 
                 if checkout_result.returncode != 0:
-                    print(
+                    logger.error(
                         f"Failed to checkout commit {commit}: {checkout_result.stderr}"
                     )
                     raise Exception(f"Failed to checkout commit {commit}")
 
-            print(f"Successfully checked out commit {commit}")
+            logger.info(f"Successfully checked out commit {commit}")
 
             # Remove .git directory to reduce size
             git_dir = repo_path / ".git"
@@ -185,7 +187,7 @@ def download_repo(
 
             # Create a zip archive
             zip_path = Path(temp_dir) / f"{repo_slug}.zip"
-            print("Creating zip archive...")
+            logger.info("Creating zip archive...")
 
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # Walk through all files and add them to the zip
@@ -199,13 +201,13 @@ def download_repo(
             with open(zip_path, "rb") as f:
                 zip_content = f.read()
 
-            print(f"Archive created successfully. Size: {len(zip_content)} bytes")
+            logger.info(f"Archive created successfully. Size: {len(zip_content)} bytes")
             return zip_content
 
         except subprocess.TimeoutExpired:
             raise Exception("Git clone operation timed out")
         except Exception as e:
-            print(f"Error during repository download: {e!s}")
+            logger.error(f"Error during repository download: {e!s}")
             raise
 
 
@@ -339,16 +341,16 @@ def download_and_upload_repo(
 
     # Handle missing fields
     if not repo_id:
-        print(f"Missing repo_id in repo data: {repo}")
+        logger.error(f"Missing repo_id in repo data: {repo}")
         return repo_name
     if not repo_name:
-        print(f"Missing repo_name in repo data: {repo}")
+        logger.error(f"Missing repo_name in repo data: {repo}")
         return "unknown"
     if not workspace:
-        print(f"Missing workspace in repo data: {repo}")
+        logger.error(f"Missing workspace in repo data: {repo}")
         return repo_name
     if not repo_slug:
-        print(f"Missing repo slug in repo data: {repo}")
+        logger.error(f"Missing repo slug in repo data: {repo}")
         return repo_name
 
     # Get latest commit if not provided
@@ -363,7 +365,7 @@ def download_and_upload_repo(
 
     installation_id = repo.get("installation_id")
     if not installation_id:
-        print(f"Missing installation_id for repo {repo_name}")
+        logger.error(f"Missing installation_id for repo {repo_name}")
         return repo_name
 
     tracked_branch = repo.get("tracked_branch")
@@ -394,7 +396,7 @@ def download_and_upload_repo(
                     .options(selectinload(PrimaryAsset.versions))
                 ).first()
                 if not primary_asset:
-                    print(
+                    logger.error(
                         f"Failed to find primary asset for {repo_name} for org: {org_id}, unable to process push event"
                     )
                     return repo_name
@@ -444,7 +446,7 @@ def download_and_upload_repo(
                             break
                         elif version.status == VersionStatus.GENERATING:
                             # STOPGAP: Ignore push events during active generation to ensure completion
-                            print(
+                            logger.warning(
                                 f"Generation already in progress for {repo.get('name', 'unknown')}. "
                                 f"Ignoring push event to allow current generation to complete."
                             )
@@ -454,7 +456,7 @@ def download_and_upload_repo(
                     primary_asset.versions
                     and primary_asset.versions[0].status == VersionStatus.CONNECTING
                 ):
-                    print(
+                    logger.info(
                         f"Version already in connecting state for {repo_name}, skipping..."
                     )
                     return repo_name
@@ -487,11 +489,11 @@ def download_and_upload_repo(
 
                 _create_git_provider_grants(session, primary_asset_id, org_id)
 
-                print(
+                logger.info(
                     f"Creating primary asset and version for {repo_name}:{commit} for org: {org_id}. Version ID: {version_id}"
                 )
     except IntegrityError:
-        print(
+        logger.error(
             f"Failed to create primary asset and version {repo_name}:{commit} for org: {org_id}"
         )
         return repo_name
@@ -510,7 +512,7 @@ def download_and_upload_repo(
 
     # Download repository
     zip_content = download_repo(workspace, repo_slug, commit, access_token)
-    print(f"Repository downloaded successfully. Size: {len(zip_content)} bytes")
+    logger.info(f"Repository downloaded successfully. Size: {len(zip_content)} bytes")
 
     # Upload to S3
     org_hashed_id = hashlib.sha256(org_id.encode("utf-8")).hexdigest()[:63]
@@ -518,7 +520,7 @@ def download_and_upload_repo(
         f"assets/{org_hashed_id}/{primary_asset_id}/{version_id}/{repo_name}.zip"
     )
     upload_to_s3_with_metadata(zip_content, metadata, upload_key)
-    print(f"Repository {repo_name} uploaded successfully to {upload_key}.")
+    logger.info(f"Repository {repo_name} uploaded successfully to {upload_key}.")
 
     return None
 
@@ -621,7 +623,7 @@ def close_pull_request(
 
         # Check if PR is already closed
         if state in ["MERGED", "DECLINED", "SUPERSEDED"]:
-            print(f"INFO: Pull request #{pr_id} is already {state.lower()}")
+            logger.info(f"Pull request #{pr_id} is already {state.lower()}")
             return
 
     # Try to decline the PR
@@ -631,9 +633,8 @@ def close_pull_request(
 
     try:
         response.raise_for_status()
-        print(f"Closed pull request #{pr_id}")
+        logger.info(f"Closed pull request #{pr_id}")
     except requests.HTTPError as e:
-        print(f"Failed to close pull request #{pr_id}: {e}")
         # Get more details about the error
         error_detail = ""
         try:
@@ -642,7 +643,7 @@ def close_pull_request(
         except (ValueError, AttributeError):
             error_detail = f" - {e.response.text}"
 
-        print(f"Failed to close pull request #{pr_id}: {e}{error_detail}")
+        logger.error(f"Failed to close pull request #{pr_id}: {e}{error_detail}")
         raise
 
 
@@ -676,14 +677,14 @@ def create_pull_request(
 
     try:
         response.raise_for_status()
-        print(
+        logger.info(
             f"Pull request created successfully: {response.json()['links']['html']['href']}"
         )
     except requests.HTTPError as e:
         if e.response.status_code == 400:
             error_detail = e.response.json()
             if "already exists" in str(error_detail):
-                print("Pull request already exists for this branch")
+                logger.info("Pull request already exists for this branch")
             else:
                 raise
         else:
@@ -702,7 +703,7 @@ def create_pull_request_with_bot_cleanup(
     BOT_NAME = "docs-bot"
     BOT_EMAIL = "bot@driverai.com"
 
-    print("Checking for existing bot pull requests...")
+    logger.info("Checking for existing bot pull requests...")
 
     try:
         existing_prs = list_pull_requests(workspace, repo_slug, access_token)
@@ -729,20 +730,20 @@ def create_pull_request_with_bot_cleanup(
                             close_pull_request(
                                 workspace, repo_slug, pr_id, access_token
                             )
-                            print(
+                            logger.info(
                                 f"Closed existing bot PR #{pr_id} from branch {source_branch}"
                             )
                         except Exception as close_error:
                             # Log but don't fail if we can't close the PR
-                            print(
-                                f"Warning: Could not close PR #{pr_id}: {close_error}"
+                            logger.warning(
+                                f"Could not close PR #{pr_id}: {close_error}"
                             )
 
                 except Exception as e:
-                    print(f"Error checking PR #{pr.get('id', 'unknown')}: {e}")
+                    logger.error(f"Error checking PR #{pr.get('id', 'unknown')}: {e}")
 
     except Exception as e:
-        print(f"Error listing pull requests: {e}")
+        logger.error(f"Error listing pull requests: {e}")
 
     # Create new pull request
     create_pull_request(

@@ -226,6 +226,17 @@ class GitLabProvider(GitProviderInterface):
             "Please create webhooks manually through the GitLab UI."
         )
 
+    def deregister_webhook(
+        self,
+        installation: GitProviderAppInstallation,
+        webhook_id: str,
+    ) -> None:
+        """Deregister webhook - not implemented for GitLab"""
+        raise NotImplementedError(
+            "Webhook deregistration is not yet implemented for GitLab. "
+            "Please delete webhooks manually through the GitLab UI."
+        )
+
     # Private helper methods
 
     def _fetch_group_access_token(self, install_id: str) -> str:

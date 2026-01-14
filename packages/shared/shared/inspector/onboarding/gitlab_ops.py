@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 from uuid import UUID
 
@@ -29,6 +30,8 @@ from shared.secret_management.aws_secret_management import (
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
+logger = logging.getLogger(__name__)
+
 # TODO: add fetch_github_default_branch_name
 # TODO: update generate_codebase_metadata to include installation_id
 # TODO: update download_and_upload_repo match gh_ops:download_and_upload_repo
@@ -54,7 +57,7 @@ def _create_git_provider_grants(
             role=PrimaryAssetRole.asset_member,
         )
         session.add(grant)
-        print(f"INFO: Created internal visibility grant for asset {primary_asset_id}")
+        logger.info(f"Created internal visibility grant for asset {primary_asset_id}")
     elif visibility == SourceVisibility.public:
         grant = PrimaryAssetRoleGrant(
             primary_asset_id=primary_asset_id,
@@ -63,16 +66,14 @@ def _create_git_provider_grants(
             role=PrimaryAssetRole.asset_member,
         )
         session.add(grant)
-        print(f"INFO: Created public visibility grant for asset {primary_asset_id}")
+        logger.info(f"Created public visibility grant for asset {primary_asset_id}")
 
 
 def fetch_access_token(installation_id: str) -> str:
-    print(f"INFO: Fetching group access token for installation ID {installation_id}")
+    logger.info(f"Fetching group access token for installation ID {installation_id}")
     install_key = format_secret_name("GIT_PROVIDER_GAT_INSTALL_SECRET", installation_id)
     secrets_manager = AWSSecretManagementStrategy(
-        AWSClientConfig(
-            region_name=os.environ["AWS_REGION"]
-        )
+        AWSClientConfig(region_name=os.environ["AWS_REGION"])
     )
     secret_value = secrets_manager.read_secret(install_key)
     if not secret_value:
@@ -108,8 +109,8 @@ def fetch_vcs_info(
     )
     repo_response.raise_for_status()
     repo_data = repo_response.json()
-    print(
-        f"INFO: Repo information retrieved from GitLab API (status code {repo_response.status_code}): {repo_data}"
+    logger.info(
+        f"Repo information retrieved from GitLab API (status code {repo_response.status_code}): {repo_data}"
     )
 
     default_branch = repo_data["default_branch"]
@@ -122,8 +123,8 @@ def fetch_vcs_info(
     )
     commit_response.raise_for_status()
     commit_data = commit_response.json()
-    print(
-        f"INFO: Commit data retrieved from GitLab API (status code {commit_response.status_code}): {commit_data}"
+    logger.info(
+        f"Commit data retrieved from GitLab API (status code {commit_response.status_code}): {commit_data}"
     )
 
     # Build VersionControlInfo
@@ -226,8 +227,8 @@ def download_and_upload_repo(
                     .options(selectinload(PrimaryAsset.versions))
                 ).first()
                 if not primary_asset:
-                    print(
-                        f"ERROR: Failed to find primary asset for {repo} for org: {org_id}, unable to process push event"
+                    logger.error(
+                        f"Failed to find primary asset for {repo} for org: {org_id}, unable to process push event"
                     )
                     return repo
                 primary_asset_id = primary_asset.id
@@ -272,14 +273,14 @@ def download_and_upload_repo(
                             break
                         elif version.status == VersionStatus.GENERATING:
                             # STOPGAP: Ignore push events during active generation to ensure completion
-                            print(
-                                f"WARNING: Generation already in progress for {repo.get('repo_name', 'unknown')}. "
+                            logger.warning(
+                                f"Generation already in progress for {repo.get('repo_name', 'unknown')}. "
                                 f"Ignoring push event to allow current generation to complete."
                             )
                             return repo
                 elif primary_asset.versions[0].status == VersionStatus.CONNECTING:
-                    print(
-                        f"INFO: Version already in connecting state for {repo_name}, skipping..."
+                    logger.info(
+                        f"Version already in connecting state for {repo_name}, skipping..."
                     )
                     return repo
                 else:
@@ -311,12 +312,12 @@ def download_and_upload_repo(
 
                 _create_git_provider_grants(session, primary_asset_id, org_id)
                 version_id = version.id
-                print(
-                    f"INFO: Creating primary asset and version for {repo_name}:{commit} for org: {org_id}. Version ID: {version_id}"
+                logger.info(
+                    f"Creating primary asset and version for {repo_name}:{commit} for org: {org_id}. Version ID: {version_id}"
                 )
     except IntegrityError:
-        print(
-            f"ERROR: Failed to create primary asset and version {repo_name}:{commit} for org: {org_id}"
+        logger.error(
+            f"Failed to create primary asset and version {repo_name}:{commit} for org: {org_id}"
         )
         return repo
     full_repo_name = repo["metadata"]["path_with_namespace"]
@@ -332,14 +333,14 @@ def download_and_upload_repo(
     )
 
     zip_content = download_repo(base_url, repo_id, commit, access_token)
-    print(f"INFO: Repository downloaded successfully. Size: {len(zip_content)} bytes")
+    logger.info(f"Repository downloaded successfully. Size: {len(zip_content)} bytes")
 
     org_hashed_id = hashlib.sha256(org_id.encode("utf-8")).hexdigest()[:63]
     upload_key = (
         f"assets/{org_hashed_id}/{primary_asset_id}/{version_id}/{repo_name}.zip"
     )
     upload_to_s3_with_metadata(zip_content, metadata, upload_key)
-    print(f"INFO: Repository {repo_name} uploaded successfully to {upload_key}.")
+    logger.info(f"Repository {repo_name} uploaded successfully to {upload_key}.")
 
     return None
 
@@ -402,16 +403,16 @@ def create_pull_request(
         },
     )
     response.raise_for_status()
-    print(f"INFO: Pull request created successfully: {response.json()['web_url']}")
+    logger.info(f"Pull request created successfully: {response.json()['web_url']}")
 
 
 def get_gitlab_username(base_url: str, access_token: str) -> str:
     url = f"{base_url.rstrip('/')}/api/v4/user"
     headers = {"PRIVATE-TOKEN": access_token}
-    print(f"DEBUG: Fetching GitLab username from {url}")
+    logger.debug(f"Fetching GitLab username from {url}")
     response = requests.get(url, headers=headers)
     response.raise_for_status()
-    print(f"DEBUG: GitLab user response: {response.json()}")
+    logger.debug(f"GitLab user response: {response.json()}")
     return response.json()["username"]
 
 
@@ -461,7 +462,7 @@ def close_merge_request(
     url = f"{base_url}/api/v4/projects/{repo_id}/merge_requests/{mr_iid}"
     response = requests.put(url, headers=headers, json={"state_event": "close"})
     response.raise_for_status()
-    print(f"INFO: Closed merge request !{mr_iid}")
+    logger.info(f"Closed merge request !{mr_iid}")
 
 
 def create_pull_request_with_bot_cleanup(
@@ -491,8 +492,8 @@ def create_pull_request_with_bot_cleanup(
                     for commit in commits
                 )
                 if is_bot_mr:
-                    print(f"INFO: Closing merge request !{mr_iid}")
+                    logger.info(f"Closing merge request !{mr_iid}")
                     close_merge_request(base_url, repo_id, mr_iid, access_token)
     except requests.HTTPError as e:
-        print(f"ERROR: Error checking for existing bot PRs: {e}")
+        logger.error(f"Error checking for existing bot PRs: {e}")
     create_pull_request(base_url, repo_id, access_token, branch, commit_slug)

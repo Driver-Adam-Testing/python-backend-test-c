@@ -28,10 +28,12 @@ from shared.interfaces.aws_client_config import AWSClientConfig
 from shared.interfaces.hatchet_interfaces import (
     ConnectReposForInstallationInput,
     HandleAzureDevopsEventsInput,
+    HandleBitbucketDCEventsInput,
     HandleBitbucketEventsInput,
     HandleGithubEventsInput,
     HandleGitlabEventsInput,
 )
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
 from app.api.auth import UserToken
@@ -130,7 +132,6 @@ def delete_git_provider_app(
     )
 
 
-# ✅
 @router.get(
     "/app/{application_id}/installations",
     summary="Get app install for logged.",
@@ -152,29 +153,27 @@ def get_app_installation(
 @router.post(
     "/app/{application_id}/token",
     summary="Add access token to the app.",
+    response_model=GitProviderAppInstallation,
 )
 def add_access_token(
     session: CurrentSession,
     current_user: UserToken,
     application_id: str,
     gat: AccessTokenData,
-) -> JSONResponse:
+) -> GitProviderAppInstallation:
     enforce_org_action(session, current_user, "vcs.manage")
     try:
         install = provider_service.install_access_token(
             session, current_user.organization_id, application_id, gat.model_dump()
         )
-
-        if not install:
-            raise HTTPException(status_code=404, detail="Installation not found.")
-
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={"message": "Token added."},
-        )
     except GitProviderAccessTokenError:
         logger.exception("Error adding token")
         raise HTTPException(status_code=500, detail="Invalid token")
+
+    if not install:
+        raise HTTPException(status_code=404, detail="Installation not found.")
+
+    return install
 
 
 @router.get(
@@ -196,6 +195,66 @@ def get_app_installation_webhook_info(
         installation_id,
     )
     return webhook_info
+
+
+@router.post(
+    "/app/{application_id}/installations/{installation_id}/webhook/register",
+    summary="Register a webhook for the git provider installation.",
+)
+def register_webhook(
+    session: CurrentSession,
+    current_user: UserToken,
+    application_id: UUID,
+    installation_id: UUID,
+) -> JSONResponse:
+    enforce_org_action(session, current_user, "vcs.manage")
+    try:
+        result = provider_service.register_webhook(
+            session,
+            current_user.organization_id,
+            str(application_id),
+            str(installation_id),
+        )
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=result,
+        )
+    except (KeyError, ValueError, SQLAlchemyError) as e:
+        logger.exception(f"Webhook registration failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error during webhook registration.",
+        )
+
+
+@router.delete(
+    "/app/{application_id}/installations/{installation_id}/webhook/register",
+    summary="Deregister a webhook for the git provider installation.",
+)
+def deregister_webhook(
+    session: CurrentSession,
+    current_user: UserToken,
+    application_id: UUID,
+    installation_id: UUID,
+) -> JSONResponse:
+    enforce_org_action(session, current_user, "vcs.manage")
+    try:
+        result = provider_service.deregister_webhook(
+            session,
+            current_user.organization_id,
+            str(application_id),
+            str(installation_id),
+        )
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=result,
+        )
+    except (KeyError, ValueError, SQLAlchemyError) as e:
+        logger.exception(f"Webhook deregistration failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error during webhook deregistration.",
+        )
 
 
 @router.delete(
@@ -238,12 +297,12 @@ def get_repositories_by_installation_id(
         )
     except GitProviderAccessTokenError as e:
         logger.error(f"Error fetching repositories: {e}")
-        # give me a 403 if the user is not authorized to access the installation
-        raise HTTPException(status_code=500, detail="Invalid Token")
+        raise HTTPException(status_code=403, detail="Invalid or expired token")
 
 
 @router.put(
     "/app/{application_id}/repos/{installation_id}/token",
+    response_model=GitProviderAppInstallation,
 )
 def update_git_provider_group_access_token(
     session: CurrentSession,
@@ -251,23 +310,20 @@ def update_git_provider_group_access_token(
     application_id: str,
     installation_id: str,
     new_gat: AccessTokenData,
-) -> JSONResponse:
+) -> GitProviderAppInstallation:
     enforce_org_action(session, current_user, "vcs.manage")
     try:
-        provider_service.update_access_token(
+        install = provider_service.update_access_token(
             session,
             current_user.organization_id,
             application_id,
             installation_id,
             new_gat.model_dump(by_alias=True),
         )
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={"message": "Token updated."},
-        )
     except GitProviderAccessTokenError:
-        logger.exception("Error adding token")
         raise HTTPException(status_code=500, detail="Invalid token")
+
+    return install
 
 
 @router.post(
@@ -307,6 +363,12 @@ def connect_git_provider_repo(
             input_validator=HandleAzureDevopsEventsInput,
         )
         input_type = HandleAzureDevopsEventsInput
+    elif app.provider_kind == GitProviderKind.BITBUCKET_DATA_CENTER:
+        handle_events_task = hatchet.stubs.task(
+            name="handle-bitbucket-dc-events-workflow",
+            input_validator=HandleBitbucketDCEventsInput,
+        )
+        input_type = HandleBitbucketDCEventsInput
     else:
         raise HTTPException(
             status_code=400, detail=f"Unsupported provider kind: {app.provider_kind}"
@@ -449,7 +511,6 @@ def handle_installation_delete_event(
     org_id = installation_record.organization_id
     session.delete(installation_record)
     session.commit()
-    installation_id = None
 
     repositories = body["repositories"]
     repos_added = []
@@ -690,6 +751,7 @@ def git_provider_webhook(
     """Generic webhook handler for GitLab, Bitbucket, and Azure DevOps"""
     body = body_data["json_body"]
     headers = body_data["headers"]
+    raw_body = body_data["raw_body"]  # For HMAC signature verification
     logger.info("Received webhook event: %s", body)
 
     # Get installation_id from query param OR header
@@ -702,7 +764,11 @@ def git_provider_webhook(
     try:
         # Delegate everything to the service
         content = provider_service.handle_webhook_event(
-            session=session, installation_id=installation_id, headers=headers, body=body
+            session=session,
+            installation_id=installation_id,
+            headers=headers,
+            body=body,
+            raw_body=raw_body,
         )
         return JSONResponse(
             status_code=status.HTTP_202_ACCEPTED,

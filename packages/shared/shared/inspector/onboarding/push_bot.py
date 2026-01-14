@@ -1,9 +1,12 @@
+import logging
 import os
 import re
 import subprocess
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 def extract_values_from_presigned_url(url: str) -> dict:
@@ -32,11 +35,49 @@ def run(
 
     result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
     if result.stdout:
-        print(result.stdout)
+        logger.info(f"stdout: {result.stdout}")
     if result.stderr:
-        print(result.stderr)
+        if result.returncode != 0:
+            logger.error(f"stderr: {result.stderr}")
+        else:
+            logger.warning(f"stderr: {result.stderr}")
     if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, cmd)
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, result.stdout, result.stderr
+        )
+    return result
+
+
+def run_git_with_bearer_auth(
+    args: list[str],
+    access_token: str,
+    cwd: str | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess:
+    """Run git command with Bearer token authentication via http.extraHeader.
+
+    This is required for Bitbucket Data Center Project/Repository HTTP Access Tokens
+    which cannot be embedded in the clone URL.
+    """
+    cmd = [
+        "git",
+        "-c",
+        f"http.extraHeader=Authorization: Bearer {access_token}",
+        *args,
+    ]
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    if result.stdout:
+        logger.info(f"stdout: {result.stdout}")
+    if result.stderr:
+        if result.returncode != 0:
+            logger.error(f"stderr: {result.stderr}")
+        else:
+            logger.warning(f"stderr: {result.stderr}")
+    if check and result.returncode != 0:
+        sanitized_cmd = " ".join(cmd[:3] + ["..."] + args)
+        raise subprocess.CalledProcessError(
+            result.returncode, sanitized_cmd, result.stdout, result.stderr
+        )
     return result
 
 
@@ -51,6 +92,7 @@ def push_docs(version_id: uuid.UUID) -> None:
     from database.models_enums import PrimaryAssetProvider
     from shared.inspector.onboarding import (
         azure_devops_ops,
+        bitbucket_dc_ops,
         bitbucket_ops,
         gh_ops,
         gitlab_ops,
@@ -59,12 +101,12 @@ def push_docs(version_id: uuid.UUID) -> None:
         unpack_archive_to_finalized_path,
     )
     from shared.inspector.utils.db import (
-        get_version_by_id,
         git_provider_app_installation_by_id,
+        sync_get_version_by_id,
     )
     from sqlmodel import Session, select
 
-    version = await get_version_by_id(version_id)
+    version = sync_get_version_by_id(version_id)
     primary_asset_id = version.primary_asset.id
     tracked_branch = version.primary_asset.vcs_tracked_branch
     repo_id = version.primary_asset.repository_id
@@ -153,13 +195,35 @@ def push_docs(version_id: uuid.UUID) -> None:
             clone_url, full_name = azure_devops_ops.get_repo_clone_info_from_id(
                 base_url, project, repo_id, access_token
             )
+        elif provider == PrimaryAssetProvider.BITBUCKET_DATA_CENTER:
+            # Bitbucket DC uses Bearer auth via git http.extraHeader
+            access_token, instance_url = bitbucket_dc_ops.fetch_access_token(install_id)
+            vcs_metadata = version.vcs_metadata or {}
+            project_key = vcs_metadata.get("project_key", "")
+            if not project_key:
+                project_key = vcs_metadata.get("repository", {}).get("namespace", "")
+            if not project_key:
+                raise ValueError(
+                    f"Could not determine project_key from VCS metadata for version {version_id}"
+                )
+            repo_slug = repo_name.lower().replace(" ", "-")
+            clone_url, full_name = bitbucket_dc_ops.get_repo_clone_info_from_id(
+                instance_url, project_key, repo_slug
+            )
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
         repo_dir = Path(temp_dir) / full_name
         target_dir = "driver_docs"
         if not os.path.exists(repo_dir):
-            run(f"git clone {clone_url} {repo_dir}")
+            # Bitbucket DC requires Bearer auth via git http.extraHeader
+            if provider == PrimaryAssetProvider.BITBUCKET_DATA_CENTER:
+                run_git_with_bearer_auth(
+                    ["clone", clone_url, str(repo_dir)],
+                    access_token,
+                )
+            else:
+                run(f"git clone {clone_url} {repo_dir}")
             if tracked_branch is not None:
                 run(f"git checkout {tracked_branch}", cwd=repo_dir)
 
@@ -171,7 +235,7 @@ def push_docs(version_id: uuid.UUID) -> None:
             # NOTE: only need to do this because previous iteration of export landed
             # directly in `driver_docs`. Once we start exporting other content,
             # we'll need a different approach.
-            print(f"Removing existing driver_docs directory: {driver_docs_path}")
+            logger.info(f"Removing existing driver_docs directory: {driver_docs_path}")
             shutil.rmtree(driver_docs_path)
 
         dst_path = repo_dir / "driver_docs" / repo_name
@@ -184,12 +248,20 @@ def push_docs(version_id: uuid.UUID) -> None:
 
         diff = run("git diff --cached --quiet", cwd=repo_dir, check=False)
         if diff.returncode == 0:
-            print("✅ No changes to commit.")
+            logger.info("No changes to commit")
             return
 
         run(f'git commit -m "{COMMIT_MESSAGE}"', cwd=repo_dir)
-        run(f"git push --force {clone_url} {branch}", cwd=repo_dir)
-        print(f"✅ Pushed `{target_dir}` to `{branch}`")
+        # Bitbucket DC requires Bearer auth via git http.extraHeader
+        if provider == PrimaryAssetProvider.BITBUCKET_DATA_CENTER:
+            run_git_with_bearer_auth(
+                ["push", "--force", clone_url, branch],
+                access_token,
+                cwd=str(repo_dir),
+            )
+        else:
+            run(f"git push --force {clone_url} {branch}", cwd=repo_dir)
+        logger.info(f"Pushed {target_dir} to {branch}")
 
         # Create pull request based on provider
         if provider == PrimaryAssetProvider.GITHUB:
@@ -213,6 +285,17 @@ def push_docs(version_id: uuid.UUID) -> None:
             azure_devops_ops.create_pull_request_with_bot_cleanup(
                 base_url, project, repo_id, access_token, branch, commit_slug
             )
+        elif provider == PrimaryAssetProvider.BITBUCKET_DATA_CENTER:
+            bitbucket_dc_ops.create_pull_request_with_bot_cleanup(
+                instance_url,
+                project_key,
+                repo_slug,
+                access_token,
+                branch,
+                commit_slug,
+                install_id,
+                tracked_branch,
+            )
 
 
 def sync_directory(src: str, dest: str) -> None:
@@ -221,7 +304,7 @@ def sync_directory(src: str, dest: str) -> None:
     if os.path.exists(dest):
         shutil.rmtree(dest)
     shutil.copytree(src, dest)
-    print(f"✅ Synced `{src}` to `{dest}`")
+    logger.info(f"Synced {src} to {dest}")
 
 
 def download_file_from_s3(
@@ -233,13 +316,12 @@ def download_file_from_s3(
     s3 = boto3.client("s3")
     response = s3.head_object(Bucket=bucket_name, Key=object_key)
 
-    # Extract and print metadata
     metadata = response.get("Metadata", {})
-    print(metadata)
-    # Download the ZIP file
+    logger.info(f"S3 object metadata: {metadata}")
     s3.download_file(bucket_name, object_key, local_file_path)
-
-    print(f"Downloaded {object_key} from bucket {bucket_name} to {local_file_path}")
+    logger.info(
+        f"Downloaded {object_key} from bucket {bucket_name} to {local_file_path}"
+    )
     return metadata
 
 

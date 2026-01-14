@@ -234,7 +234,18 @@ class AzureDevOpsProvider(GitProviderInterface):
         config: WebhookConfig,
         scope: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        pass
+        raise NotImplementedError(
+            "Webhook registration is not yet implemented for Azure DevOps."
+        )
+
+    def deregister_webhook(
+        self,
+        installation: GitProviderAppInstallation,
+        webhook_id: str,
+    ) -> None:
+        raise NotImplementedError(
+            "Webhook deregistration is not yet implemented for Azure DevOps."
+        )
 
     def fetch_secrets_by_id(self, installation_id: str) -> dict[str, Any]:
         """Fetch secrets by installation ID"""

@@ -14,6 +14,7 @@ class PrimaryAssetProvider(enum.StrEnum):
     GITHUB = enum.auto()
     GITLAB_SELF_MANAGED = enum.auto()
     BITBUCKET = enum.auto()
+    BITBUCKET_DATA_CENTER = enum.auto()
     AZURE_DEVOPS_CLOUD = enum.auto()
     USER = enum.auto()
 

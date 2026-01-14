@@ -16,10 +16,22 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pygit2
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 from analytics.aggregation.engine import AggregationEngine
+from analytics.checkpoint import (
+    ExtractionCheckpoint,
+    delete_checkpoint,
+    download_checkpoint,
+    upload_checkpoint,
+    validate_checkpoint,
+)
 from analytics.export.exporter import DriverJSONExporter
+from analytics.storage.chunk_merger import ChunkMerger
 from analytics.storage.hot_storage import HotStorage
 from analytics.storage.parquet_storage import ParquetStorage
 from pydantic import BaseModel
@@ -31,9 +43,121 @@ from .phases.clone import (
     cleanup_repository,
     clone_repository,
 )
-from .phases.extract import ExtractResult, extract_commits
+from .phases.extract import ExtractResult, create_chunk_callback, extract_commits
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Chunk Merge Functions (v2.0 Memory Optimization)
+# ============================================================================
+
+
+def merge_chunks_to_storage(
+    chunks_dir: Path,
+    output_path: Path,
+    data_type: str,
+    order_by: str | None = None,
+    partition_by: str | None = None,
+) -> None:
+    """Merge Parquet chunks to final storage using DuckDB streaming.
+
+    This function uses DuckDB to efficiently merge multiple Parquet chunks
+    into a single output file or partitioned directory without loading
+    all data into memory.
+
+    Args:
+        chunks_dir: Directory containing chunk files (*.parquet)
+        output_path: Output path (file for commits, directory for file_changes)
+        data_type: "commits" or "file_changes"
+        order_by: Column to order by (for commits)
+        partition_by: Column to partition by (for file_changes)
+    """
+    chunk_pattern = str(chunks_dir / "*.parquet")
+
+    # Check if any chunks exist
+    chunk_files = list(chunks_dir.glob("*.parquet"))
+    if not chunk_files:
+        logger.warning(f"No chunks found in {chunks_dir}")
+        return
+
+    merger = ChunkMerger()
+    try:
+        if data_type == "commits":
+            merger.merge_commits(
+                chunk_pattern=chunk_pattern,
+                output_path=str(output_path),
+                order_by=order_by,
+            )
+            logger.info(f"Merged {len(chunk_files)} commit chunks to {output_path}")
+        elif data_type == "file_changes":
+            merger.merge_file_changes(
+                chunk_pattern=chunk_pattern,
+                output_dir=str(output_path),
+                partition_by=partition_by or "commit_year_month",
+            )
+            logger.info(
+                f"Merged {len(chunk_files)} file change chunks to {output_path}"
+            )
+        else:
+            raise ValueError(f"Unknown data_type: {data_type}")
+    finally:
+        merger.close()
+
+
+def download_chunks_to_local(
+    s3_client: Any,
+    bucket: str,
+    codebase_id: str,
+    chunk_type: str,
+    local_dir: Path,
+) -> Path:
+    """Download S3 chunks to local temp directory for merging.
+
+    Args:
+        s3_client: boto3 S3 client
+        bucket: S3 bucket name
+        codebase_id: Codebase identifier
+        chunk_type: "commits" or "file_changes"
+        local_dir: Local directory to download to
+
+    Returns:
+        Path to directory containing downloaded chunks
+    """
+    from analytics.storage.chunk_storage import ChunkStorage
+
+    storage = ChunkStorage(s3_client, bucket, codebase_id)
+
+    # Get list of chunks
+    if chunk_type == "commits":
+        chunk_keys = storage.list_commit_chunks()
+    elif chunk_type == "file_changes":
+        chunk_keys = storage.list_file_change_chunks()
+    else:
+        raise ValueError(f"Unknown chunk_type: {chunk_type}")
+
+    # Create local directory (even if no chunks, so glob() works in Python 3.12+)
+    local_chunks_dir = local_dir / chunk_type
+    local_chunks_dir.mkdir(parents=True, exist_ok=True)
+
+    if not chunk_keys:
+        logger.warning(f"No {chunk_type} chunks found for {codebase_id}")
+        return local_chunks_dir
+
+    # Download each chunk
+    for key in chunk_keys:
+        filename = Path(key).name
+        local_path = local_chunks_dir / filename
+
+        with open(local_path, "wb") as f:
+            s3_client.download_fileobj(bucket, key, f)
+
+        logger.debug(f"Downloaded {key} to {local_path}")
+
+    logger.info(
+        f"Downloaded {len(chunk_keys)} {chunk_type} chunks to {local_chunks_dir}"
+    )
+    return local_chunks_dir
 
 
 # ============================================================================
@@ -237,6 +361,9 @@ class PipelineContext:
     deleted_branches: list[dict] = field(default_factory=list)
     previous_branches_data: dict | None = None  # Previous branches.json content
 
+    # Extraction checkpoint (for fault tolerance)
+    extraction_checkpoint: ExtractionCheckpoint | None = None
+
     # Timing
     start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -431,7 +558,13 @@ class AnalyticsPipeline:
         logger.info(f"Clone complete: {ctx.repo_path}")
 
     def _phase_extract(self, ctx: PipelineContext) -> None:
-        """Phase 2: Extract commits."""
+        """Phase 2: Extract commits.
+
+        v2.0 Memory Optimization:
+        - Uses chunk callback to write records to S3 as Parquet chunks during extraction
+        - Prevents OOM on large repositories by avoiding in-memory accumulation
+        - After extraction, chunks are downloaded, merged via DuckDB streaming, and cleaned up
+        """
         logger.info("Phase 2: Extracting commits...")
 
         if not ctx.repo:
@@ -445,6 +578,43 @@ class AnalyticsPipeline:
                 [ctx.repo.head.shorthand] if not ctx.repo.head_is_unborn else ["main"]
             )
 
+        # Download and validate extraction checkpoint for fault tolerance
+        bucket = org_id_to_hash(ctx.input.organization_id)
+        extraction_checkpoint = self._get_extraction_checkpoint(
+            bucket, ctx.input.codebase_id, ctx.repo
+        )
+
+        # Create checkpoint callback for S3 upload
+        checkpoint_callback = self._create_checkpoint_callback(
+            bucket, ctx.input.codebase_id
+        )
+
+        # v2.0: Create chunk callback for memory-efficient extraction
+        # This writes records directly to S3 as Parquet chunks instead of accumulating in memory
+        import boto3
+
+        s3_client = boto3.client("s3")
+
+        # Get initial chunk counts from checkpoint if resuming
+        initial_commit_chunk_count = 0
+        initial_file_change_chunk_count = 0
+        initial_processed_shas: set[str] | None = None
+        if extraction_checkpoint:
+            initial_commit_chunk_count = extraction_checkpoint.commit_chunk_count
+            initial_file_change_chunk_count = (
+                extraction_checkpoint.file_change_chunk_count
+            )
+            initial_processed_shas = extraction_checkpoint.processed_commit_shas
+
+        batch_callback, chunk_storage = create_chunk_callback(
+            s3_client=s3_client,
+            bucket=bucket,
+            codebase_id=ctx.input.codebase_id,
+            initial_commit_chunk_count=initial_commit_chunk_count,
+            initial_file_change_chunk_count=initial_file_change_chunk_count,
+            initial_processed_shas=initial_processed_shas,
+        )
+
         result = extract_commits(
             repo=ctx.repo,
             codebase_id=ctx.input.codebase_id,
@@ -452,28 +622,131 @@ class AnalyticsPipeline:
             include_patches=ctx.config.include_patches,
             since_sha=ctx.since_sha,  # For incremental updates
             include_file_changes=True,  # Always extract file-level changes
+            checkpoint=extraction_checkpoint,
+            checkpoint_callback=checkpoint_callback,
+            checkpoint_interval_secs=30.0,  # Upload checkpoint every 30 seconds
+            batch_callback=batch_callback,  # v2.0: Write to S3 chunks
         )
 
         if not result.success:
             raise RuntimeError(f"Extract failed: {result.error}")
 
-        # Store file changes in cold storage if available
-        if result.file_changes and ctx.cold_storage:
-            ctx.cold_storage.write_file_changes(
-                codebase_id=ctx.input.codebase_id,
-                file_changes=result.file_changes,
-                partition_by_date=True,
-            )
-            logger.info(
-                f"Stored {len(result.file_changes)} file changes in cold storage"
-            )
+        # v2.0: Merge chunks from S3 to local storage
+        logger.info("Phase 2b: Merging S3 chunks to storage...")
+        self._merge_chunks_to_storage(ctx, s3_client, bucket, chunk_storage)
+
+        # Extraction succeeded - delete checkpoint
+        try:
+            delete_checkpoint(bucket, ctx.input.codebase_id)
+            logger.info("Deleted extraction checkpoint after successful completion")
+        except Exception as e:
+            # Non-fatal - checkpoint will be overwritten on next run
+            logger.warning(f"Failed to delete checkpoint: {e}")
 
         ctx.extract_result = result
 
         mode_info = f" (since {ctx.since_sha[:8]})" if ctx.since_sha else ""
-        logger.info(
-            f"Extracted {result.total_commits} unique commits ({len(result.commits)} records){mode_info}"
-        )
+        logger.info(f"Extraction complete{mode_info}")
+
+    def _merge_chunks_to_storage(
+        self,
+        ctx: PipelineContext,
+        s3_client: Any,
+        bucket: str,
+        chunk_storage: Any,
+    ) -> None:
+        """Merge S3 chunks to local storage using DuckDB streaming.
+
+        v2.0 Memory Optimization:
+        1. Download commit chunks from S3 to local temp directory
+        2. Merge commit chunks using DuckDB streaming to warm storage
+        3. Download file change chunks from S3 to local temp directory
+        4. Merge file change chunks using DuckDB streaming to cold storage
+        5. Clean up S3 chunks after successful merge
+
+        Args:
+            ctx: Pipeline context
+            s3_client: boto3 S3 client
+            bucket: S3 bucket name
+            chunk_storage: ChunkStorage instance for cleanup
+        """
+        import tempfile
+
+        # Create temp directory for chunk downloads
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Merge commit chunks to warm storage
+            commit_chunks_dir = download_chunks_to_local(
+                s3_client=s3_client,
+                bucket=bucket,
+                codebase_id=ctx.input.codebase_id,
+                chunk_type="commits",
+                local_dir=temp_path,
+            )
+
+            if list(commit_chunks_dir.glob("*.parquet")):
+                if ctx.warm_storage:
+                    # Merge to warm storage location
+                    # Path must match ParquetStorage.read_commits expectations:
+                    # storage_root / codebase_id / "warm" / "commits.parquet"
+                    output_path = (
+                        ctx.warm_storage.base_path
+                        / ctx.input.codebase_id
+                        / "warm"
+                        / "commits.parquet"
+                    )
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    merge_chunks_to_storage(
+                        chunks_dir=commit_chunks_dir,
+                        output_path=output_path,
+                        data_type="commits",
+                        order_by="committed_at",
+                    )
+                    logger.info(f"Merged commit chunks to {output_path}")
+            else:
+                logger.info("No commit chunks to merge")
+
+            # Merge file change chunks to cold storage
+            file_change_chunks_dir = download_chunks_to_local(
+                s3_client=s3_client,
+                bucket=bucket,
+                codebase_id=ctx.input.codebase_id,
+                chunk_type="file_changes",
+                local_dir=temp_path,
+            )
+
+            if list(file_change_chunks_dir.glob("*.parquet")):
+                if ctx.cold_storage:
+                    # Merge to cold storage location (partitioned by commit_year_month)
+                    # Path must match ParquetStorage.read_file_changes expectations:
+                    # storage_root / codebase_id / "cold" / "file_changes_partitioned"
+                    output_dir = (
+                        ctx.cold_storage.base_path
+                        / ctx.input.codebase_id
+                        / "cold"
+                        / "file_changes_partitioned"
+                    )
+                    output_dir.mkdir(parents=True, exist_ok=True)
+
+                    merge_chunks_to_storage(
+                        chunks_dir=file_change_chunks_dir,
+                        output_path=output_dir,
+                        data_type="file_changes",
+                        partition_by="commit_year_month",
+                    )
+                    logger.info(f"Merged file change chunks to {output_dir}")
+            else:
+                logger.info("No file change chunks to merge")
+
+        # Clean up S3 chunks after successful merge
+        try:
+            chunk_storage.delete_all_chunks()
+            logger.info("Cleaned up S3 chunks after successful merge")
+        except Exception as e:
+            # Non-fatal - chunks will be cleaned up on next run
+            logger.warning(f"Failed to clean up S3 chunks: {e}")
 
     def _phase_branches(self, ctx: PipelineContext) -> None:
         """Phase 3: Discover branches."""
@@ -496,13 +769,19 @@ class AnalyticsPipeline:
         )
 
     def _phase_store(self, ctx: PipelineContext) -> None:
-        """Phase 4: Store data in warm/cold storage."""
+        """Phase 4: Store data in warm/cold storage.
+
+        Note: In v2.0 mode (with batch_callback), commits and file_changes are written
+        to warm/cold storage during _merge_chunks_to_storage in Phase 2b. This phase
+        only runs for v1.x mode (tests, fallback) where extract_result.commits is populated.
+        """
         logger.info("Phase 4: Storing data...")
 
         if not ctx.extract_result or not ctx.warm_storage:
             return
 
-        # Store commits in warm storage
+        # v1.x mode only: Store commits in warm storage
+        # (In v2.0 mode, commits are empty - already written in Phase 2b merge)
         commits = ctx.extract_result.commits
         if commits:
             if ctx.input.incremental and ctx.since_sha:
@@ -516,7 +795,16 @@ class AnalyticsPipeline:
                 ctx.warm_storage.write_commits(ctx.input.codebase_id, commits)
                 logger.info(f"Stored {len(commits)} commit records in warm storage")
 
-        # TODO: Store file changes in cold storage
+        # v1.x mode only: Store file changes in cold storage
+        # (In v2.0 mode, file_changes are empty - already written in Phase 2b merge)
+        file_changes = ctx.extract_result.file_changes
+        if file_changes and ctx.cold_storage:
+            ctx.cold_storage.write_file_changes(
+                codebase_id=ctx.input.codebase_id,
+                file_changes=file_changes,
+                partition_by_date=True,
+            )
+            logger.info(f"Stored {len(file_changes)} file changes in cold storage")
 
         logger.info("Data storage complete")
 
@@ -694,9 +982,7 @@ class AnalyticsPipeline:
             "generated_at": "ISO timestamp"
         }
         """
-        import json
         import tempfile
-        from datetime import datetime
 
         import boto3
 
@@ -760,9 +1046,7 @@ class AnalyticsPipeline:
             "generated_at": "ISO timestamp"
         }
         """
-        import json
         import tempfile
-        from datetime import datetime
 
         import boto3
 
@@ -959,8 +1243,6 @@ class AnalyticsPipeline:
         Returns:
             Checkpoint data dict or None if not found
         """
-        import json
-
         import boto3
         from botocore.exceptions import ClientError
 
@@ -1018,7 +1300,9 @@ class AnalyticsPipeline:
 
         # Find the latest commit by date
         commits = ctx.extract_result.commits
-        latest_commit = max(commits, key=lambda c: c.get("committed_at", datetime.min))
+        # Use timezone-aware min datetime for comparison with UTC-aware committed_at
+        min_datetime = datetime.min.replace(tzinfo=UTC)
+        latest_commit = max(commits, key=lambda c: c.get("committed_at", min_datetime))
 
         latest_sha = latest_commit.get("commit_sha")
         latest_date = latest_commit.get("committed_at")
@@ -1035,6 +1319,88 @@ class AnalyticsPipeline:
             total_commits = ctx.extract_result.total_commits
 
         return latest_sha, latest_date, total_commits
+
+    def _get_extraction_checkpoint(
+        self, bucket: str, codebase_id: str, repo: pygit2.Repository
+    ) -> ExtractionCheckpoint | None:
+        """Download and validate extraction checkpoint for fault tolerance.
+
+        Args:
+            bucket: S3 bucket name
+            codebase_id: Codebase UUID
+            repo: pygit2.Repository instance
+
+        Returns:
+            Valid ExtractionCheckpoint or None if no valid checkpoint exists
+        """
+        checkpoint = download_checkpoint(bucket, codebase_id)
+
+        if checkpoint is None:
+            logger.info("No extraction checkpoint found, starting fresh")
+            return None
+
+        # Validate checkpoint against repository
+        if not validate_checkpoint(repo, checkpoint):
+            logger.warning(
+                "Extraction checkpoint invalid (commit no longer exists), discarding"
+            )
+            # Delete invalid checkpoint
+            try:
+                delete_checkpoint(bucket, codebase_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete invalid checkpoint: {e}")
+            return None
+
+        logger.info(
+            f"Resuming extraction from checkpoint: "
+            f"{checkpoint.commits_processed}/{checkpoint.commits_total} commits "
+            f"(last SHA: {checkpoint.last_processed_sha[:8]})"
+        )
+        return checkpoint
+
+    def _create_checkpoint_callback(
+        self, bucket: str, codebase_id: str
+    ) -> "Callable[[dict], None]":
+        """Create a checkpoint callback that uploads to S3.
+
+        Args:
+            bucket: S3 bucket name
+            codebase_id: Codebase UUID
+
+        Returns:
+            Callback function for extract_commits
+        """
+        extraction_started = datetime.now(UTC)
+
+        def checkpoint_callback(data: dict) -> None:
+            """Upload checkpoint to S3."""
+            try:
+                checkpoint = ExtractionCheckpoint(
+                    codebase_id=codebase_id,
+                    started_at=extraction_started,
+                    commits_total=data["commits_total"],
+                    commits_processed=data["commits_processed"],
+                    last_processed_index=data["last_processed_index"],
+                    last_processed_sha=data["last_processed_sha"],
+                    tree_size_cache=data["tree_size_cache"],
+                    # v2.0: Commit processing uses chunk counts, not in-memory records
+                    processed_commit_shas=data.get("processed_commit_shas", set()),
+                    commit_chunk_count=data.get("commit_chunk_count", 0),
+                    file_change_chunk_count=data.get("file_change_chunk_count", 0),
+                )
+                upload_checkpoint(checkpoint, bucket)
+
+                # Log progress for both phases
+                tree_progress = f"{checkpoint.commits_processed}/{checkpoint.commits_total} tree sizes"
+                commit_progress = (
+                    f"{len(checkpoint.processed_commit_shas)} commits processed"
+                )
+                logger.debug(f"Checkpoint saved: {tree_progress}, {commit_progress}")
+            except Exception as e:
+                # Non-fatal - extraction can continue without checkpoint
+                logger.warning(f"Failed to save checkpoint: {e}")
+
+        return checkpoint_callback
 
     def _count_contributors(self, ctx: PipelineContext) -> int:
         """Count unique contributors from extracted commits."""

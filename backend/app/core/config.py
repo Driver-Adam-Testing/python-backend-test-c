@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     # Feature flags
     ENABLE_SIGNUP: bool = False
 
+    # Bitbucket Data Center SSL Configuration
+    ALLOW_INSECURE_SSL_BITBUCKET_DC: bool = False
+
     @property
     def mcp_fernet_key(self) -> bytes:
         """
