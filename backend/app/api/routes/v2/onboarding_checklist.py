@@ -9,13 +9,16 @@ from database.models import (
     Version,
 )
 from database.models_enums import PrimaryAssetKind, VersionStatus
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
 from app.api.auth import UserToken
 from app.api.session import CurrentSession
 from app.authorization.fastapi import enforce_org_membership
-from app.services.onboarding_checklist_service import OnboardingChecklistService
+from app.services.onboarding_checklist_service import (
+    SKIPPABLE_STEPS,
+    OnboardingChecklistService,
+)
 
 router = APIRouter()
 
@@ -117,23 +120,103 @@ def get_onboarding_checklist(
             # Team model doesn't have created_at, use current time
             svc.mark_teams_completed(datetime.now(timezone.utc))
 
-    # If all steps are complete, set the checklist_completed_at to the newest timestamp
-    completed_dates = [
-        completed_at
-        for completed_at in [
+    # Helper to check if a step is done (completed or skipped)
+    def is_step_done(
+        completed_at: datetime | None, skipped_at: datetime | None
+    ) -> bool:
+        return completed_at is not None or skipped_at is not None
+
+    def get_step_timestamp(
+        completed_at: datetime | None, skipped_at: datetime | None
+    ) -> datetime | None:
+        if completed_at is not None:
+            return completed_at
+        return skipped_at
+
+    # Check the 3 required steps (done = completed OR skipped)
+    required_steps_done = [
+        is_step_done(
             checklist.connect_codebase_completed_at,
-            checklist.teams_completed_at,
+            checklist.connect_codebase_skipped_at,
+        ),
+        is_step_done(checklist.teams_completed_at, checklist.teams_skipped_at),
+        is_step_done(
             checklist.generate_autodoc_completed_at,
-        ]
-        if completed_at is not None
+            checklist.generate_autodoc_skipped_at,
+        ),
     ]
 
-    if len(completed_dates) == 3:
-        newest = max(completed_dates)
-        if checklist.checklist_completed_at != newest:
-            checklist.checklist_completed_at = newest
-            session.add(checklist)
-            session.commit()
-            session.refresh(checklist)
+    if all(required_steps_done):
+        # Get the timestamps for completed/skipped steps
+        completed_dates = [
+            ts
+            for ts in [
+                get_step_timestamp(
+                    checklist.connect_codebase_completed_at,
+                    checklist.connect_codebase_skipped_at,
+                ),
+                get_step_timestamp(
+                    checklist.teams_completed_at, checklist.teams_skipped_at
+                ),
+                get_step_timestamp(
+                    checklist.generate_autodoc_completed_at,
+                    checklist.generate_autodoc_skipped_at,
+                ),
+            ]
+            if ts is not None
+        ]
+        if completed_dates:
+            newest = max(completed_dates)
+            if checklist.checklist_completed_at != newest:
+                checklist.checklist_completed_at = newest
+                session.add(checklist)
+                session.commit()
+                session.refresh(checklist)
 
     return checklist
+
+
+@router.post("/onboarding-checklist/skip/{step}", response_model=OnboardingChecklist)
+def skip_onboarding_step(
+    step: str, session: CurrentSession, user: UserToken
+) -> OnboardingChecklist:
+    """Skip a step in the onboarding checklist."""
+    enforce_org_membership(session, user)
+
+    if step not in SKIPPABLE_STEPS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid step: {step}. Valid steps are: {', '.join(SKIPPABLE_STEPS)}",
+        )
+
+    svc = OnboardingChecklistService.get_or_create_checklist(
+        session=session,
+        organization_id=user.organization_id,
+        user_id=user.user_id,
+    )
+    svc.skip_step(step)
+
+    return svc.checklist
+
+
+@router.post("/onboarding-checklist/unskip/{step}", response_model=OnboardingChecklist)
+def unskip_onboarding_step(
+    step: str, session: CurrentSession, user: UserToken
+) -> OnboardingChecklist:
+    """Unskip a step in the onboarding checklist."""
+    enforce_org_membership(session, user)
+
+    if step not in SKIPPABLE_STEPS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid step: {step}. Valid steps are: {', '.join(SKIPPABLE_STEPS)}",
+        )
+
+    svc = OnboardingChecklistService.get_or_create_checklist(
+        session=session,
+        organization_id=user.organization_id,
+        user_id=user.user_id,
+    )
+    svc.unskip_step(step)
+
+    return svc.checklist

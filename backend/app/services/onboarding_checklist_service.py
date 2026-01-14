@@ -13,6 +13,20 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+SKIPPABLE_STEPS = [
+    "connect_codebase",
+    "generate_codebase",
+    "setup_mcp",
+    "enable_export",
+    "generate_autodoc",
+    "invite_teammate",
+    "configured_rbac",
+    "teams",
+    "scim_provisioning",
+    "sso_sync",
+]
+
+
 class OnboardingChecklistService:
     def __init__(self, session: Session, checklist: OnboardingChecklist) -> None:
         self._session = session
@@ -95,6 +109,30 @@ class OnboardingChecklistService:
 
     def mark_sso_sync_completed(self, when: datetime) -> Self:
         self._set_once("sso_sync_completed_at", when)
+        return self
+
+    def skip_step(self, step: str) -> Self:
+        """Skip a step - sets *_skipped_at to now, clears *_completed_at"""
+        if step not in SKIPPABLE_STEPS:
+            raise ValueError(f"Invalid step: {step}")
+        skipped_field = f"{step}_skipped_at"
+        completed_field = f"{step}_completed_at"
+        setattr(self._checklist, skipped_field, _now_utc())
+        setattr(self._checklist, completed_field, None)
+        self._session.add(self._checklist)
+        self._session.commit()
+        self._session.refresh(self._checklist)
+        return self
+
+    def unskip_step(self, step: str) -> Self:
+        """Unskip a step - clears *_skipped_at"""
+        if step not in SKIPPABLE_STEPS:
+            raise ValueError(f"Invalid step: {step}")
+        skipped_field = f"{step}_skipped_at"
+        setattr(self._checklist, skipped_field, None)
+        self._session.add(self._checklist)
+        self._session.commit()
+        self._session.refresh(self._checklist)
         return self
 
 

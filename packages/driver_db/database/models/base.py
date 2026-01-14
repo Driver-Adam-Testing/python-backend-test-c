@@ -1203,6 +1203,39 @@ class OnboardingChecklist(SQLModel, table=True):
     sso_sync_completed_at: None | datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=True), default=None
     )
+
+    # Skipped timestamps for each step
+    connect_codebase_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    generate_codebase_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    setup_mcp_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    enable_export_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    generate_autodoc_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    invite_teammate_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    configured_rbac_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    teams_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    scim_provisioning_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+    sso_sync_skipped_at: None | datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True), default=None
+    )
+
     checklist_completed_at: None | datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=True), default=None
     )
