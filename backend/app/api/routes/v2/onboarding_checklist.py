@@ -248,6 +248,11 @@ def _update_checklist_completion(
     ]
 
     if not all(required_steps_done):
+        if checklist.checklist_completed_at is not None:
+            checklist.checklist_completed_at = None
+            session.add(checklist)
+            session.commit()
+            session.refresh(checklist)
         return
 
     completed_dates = [
