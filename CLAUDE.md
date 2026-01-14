@@ -47,7 +47,7 @@
 ## Development Workflow
 
 ### Running Python Commands
-- **Always use Poetry** to run Python commands in the backend
-- Use `cd backend && poetry run python -m pytest ...` instead of `python -m pytest ...`
-- Use `cd backend && poetry run python ...` instead of `python ...`
-- This ensures you're using the correct virtual environment with all dependencies
+- **Always use uv** to run Python commands in the backend
+- Use `cd backend && uv run python -m pytest ...` instead of `python -m pytest ...`
+- Use `cd backend && uv run python ...` instead of `python ...`
+- This ensures you're using the correct environment with all dependencies
