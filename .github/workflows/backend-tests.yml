@@ -42,7 +42,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           PROJECT_NAME: test
           OPENAI_API_KEY: fake
-        run: uv run pytest -m unit --no-cov -rsfE
+        run: uv run pytest -m "not integration" --no-cov -rsfE
 
   integration-tests:
     name: Integration Tests
@@ -70,4 +70,4 @@ jobs:
           POSTGRES_PASSWORD: postgres
           PROJECT_NAME: test
           OPENAI_API_KEY: fake
-        run: uv run pytest -m "not unit" --no-cov -rsfE
+        run: uv run pytest -m integration --no-cov -rsfE

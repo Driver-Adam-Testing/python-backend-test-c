@@ -62,10 +62,9 @@ exclude = ["venv", "alembic"]
 
 [tool.pytest.ini_options]
 markers = [
-    "unit: Unit tests with mocked dependencies (default)",
-    "integration: Integration tests with real database (in-memory SQLite)"
+    "integration: Integration tests with real database (Testcontainers)"
 ]
-addopts = "--cov --cov-report=term-missing --cov-report=xml:coverage/coverage.xml"
+addopts = "--strict-markers --cov --cov-report=term-missing --cov-report=xml:coverage/coverage.xml"
 
 [tool.coverage]
 omit = ["**/*_test.py", "**/tests/**"]

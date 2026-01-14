@@ -4,7 +4,6 @@ import pytest
 from app.auth.async_cache import AsyncTTLCache
 
 
-@pytest.mark.unit
 class TestAsyncTTLCache:
     @pytest.mark.asyncio
     async def test_basic_get_set(self) -> None:

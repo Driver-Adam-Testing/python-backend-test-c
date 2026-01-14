@@ -10,8 +10,6 @@ from typing import Any
 import pytest
 from fastapi import APIRouter
 
-pytestmark = pytest.mark.unit  # Run these in CI unit test workflow since they're essentially fast-failing static analysis
-
 # Endpoints that are intentionally unprotected (no authentication required)
 # Note: These paths exist at BOTH /studio/v1/* and /api/v1/* (dual registration in main.py)
 ALLOWED_UNPROTECTED = {
