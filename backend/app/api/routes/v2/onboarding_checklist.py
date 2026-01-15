@@ -39,17 +39,10 @@ def get_onboarding_checklist(
         organization_id=user.organization_id,
         user_id=user.user_id,
     )
-    checklist = svc.checklist
+    _run_all_inferences(session, user, svc)
+    _update_checklist_completion(session, svc.checklist)
 
-    _infer_connect_codebase(session, user, svc, checklist)
-    _infer_generate_codebase(session, user, svc, checklist)
-    _infer_setup_mcp(session, user, svc, checklist)
-    _infer_enable_export(session, user, svc, checklist)
-    _infer_configured_rbac(session, user, svc, checklist)
-    _infer_teams_completed(session, user, svc, checklist)
-    _update_checklist_completion(session, checklist)
-
-    return checklist
+    return svc.checklist
 
 
 @router.post("/onboarding-checklist/skip/{step}", response_model=OnboardingChecklist)
@@ -64,6 +57,7 @@ def skip_onboarding_step(
         user_id=user.user_id,
     )
     svc.skip_step(step)
+    _run_all_inferences(session, user, svc)
     _update_checklist_completion(session, svc.checklist)
     return svc.checklist
 
@@ -80,6 +74,7 @@ def unskip_onboarding_step(
         user_id=user.user_id,
     )
     svc.unskip_step(step)
+    _run_all_inferences(session, user, svc)
     _update_checklist_completion(session, svc.checklist)
     return svc.checklist
 
@@ -95,6 +90,20 @@ def _validate_step(step: str) -> None:
             status_code=400,
             detail=f"Invalid step: {step}. Valid steps are: {', '.join(SKIPPABLE_STEPS)}",
         )
+
+
+def _run_all_inferences(
+    session: CurrentSession,
+    user: UserToken,
+    svc: OnboardingChecklistService,
+) -> None:
+    checklist = svc.checklist
+    _infer_connect_codebase(session, user, svc, checklist)
+    _infer_generate_codebase(session, user, svc, checklist)
+    _infer_setup_mcp(session, user, svc, checklist)
+    _infer_enable_export(session, user, svc, checklist)
+    _infer_configured_rbac(session, user, svc, checklist)
+    _infer_teams_completed(session, user, svc, checklist)
 
 
 def _is_step_done(
