@@ -63,7 +63,6 @@ class TestAnalyticsService:
         """Default service fixture (super admin)."""
         return service_super_admin
 
-    @pytest.mark.unit
     def test_get_overview_success(self, service, mock_s3_client):
         """Test successful overview retrieval with full schema."""
         s3_data = {
@@ -107,7 +106,6 @@ class TestAnalyticsService:
         assert result.provider is None
         mock_s3_client.get_object.assert_called_once()
 
-    @pytest.mark.unit
     def test_get_overview_not_found(self, service, mock_s3_client):
         """Test overview retrieval when file doesn't exist."""
         error_response = {"Error": {"Code": "NoSuchKey"}}
@@ -117,7 +115,6 @@ class TestAnalyticsService:
 
         assert result is None
 
-    @pytest.mark.unit
     def test_get_status_success(self, service, mock_s3_client):
         """Test successful status retrieval."""
         expected_data = {
@@ -135,7 +132,6 @@ class TestAnalyticsService:
         assert result.status == "complete"
         assert result.codebase_id == "test-id"
 
-    @pytest.mark.unit
     def test_get_status_returns_none_status_when_not_found(
         self, service, mock_s3_client
     ):
@@ -149,7 +145,6 @@ class TestAnalyticsService:
         assert result.codebase_id == "missing-id"
         assert result.generated_at is None
 
-    @pytest.mark.unit
     def test_get_org_summary_super_admin_gets_precomputed(
         self, service, mock_s3_client
     ):
@@ -176,7 +171,6 @@ class TestAnalyticsService:
         # Super admin reads org_summary.json directly
         mock_s3_client.get_object.assert_called_once()
 
-    @pytest.mark.unit
     def test_get_codebases_list_success(
         self, mock_s3_client, mock_session, mock_super_admin_user
     ):
@@ -231,7 +225,6 @@ class TestAnalyticsService:
                 cb.provider is not None or cb.provider is None
             )  # provider field exists
 
-    @pytest.mark.unit
     def test_get_branches_success(self, service, mock_s3_client):
         """Test successful branches retrieval with full schema."""
         expected_data = {
@@ -263,7 +256,6 @@ class TestAnalyticsService:
         assert len(result.branches) == 1
         assert result.branches[0].churn_sloc == 8000
 
-    @pytest.mark.unit
     def test_get_activity_success(self, service, mock_s3_client):
         """Test successful activity retrieval with byte-based metrics."""
         expected_data = {
@@ -295,7 +287,6 @@ class TestAnalyticsService:
         assert result.codebase_id == "test-id"
         assert result.daily_activity[0].addition_bytes == 5000
 
-    @pytest.mark.unit
     def test_get_ownership_success(self, service, mock_s3_client):
         """Test successful ownership retrieval."""
         expected_data = {
@@ -336,7 +327,6 @@ class TestAnalyticsService:
         assert result.codebase_id == "test-id"
         assert result.directories[0].primary_owner_email == "dev@example.com"
 
-    @pytest.mark.unit
     def test_invalid_json_returns_none(self, service, mock_s3_client):
         """Test that invalid JSON returns None."""
         mock_s3_client.get_object.return_value = {
@@ -347,7 +337,6 @@ class TestAnalyticsService:
 
         assert result is None
 
-    @pytest.mark.unit
     def test_s3_error_propagates(self, service, mock_s3_client):
         """Test that non-404 S3 errors propagate."""
         error_response = {"Error": {"Code": "AccessDenied"}}
@@ -420,7 +409,6 @@ class TestAnalyticsFiltering:
             "generated_at": "2024-06-15T10:00:00Z",
         }
 
-    @pytest.mark.unit
     def test_super_admin_sees_all_codebases(
         self, mock_s3_client, mock_session, mock_super_admin_user, all_codebases_data
     ):
@@ -450,7 +438,6 @@ class TestAnalyticsFiltering:
         assert result is not None
         assert len(result.codebases) == 2
 
-    @pytest.mark.unit
     def test_source_admin_sees_only_administered_codebases(
         self,
         mock_s3_client,
@@ -481,7 +468,6 @@ class TestAnalyticsFiltering:
         assert len(result.codebases) == 1
         assert result.codebases[0].codebase_id == "11111111-1111-1111-1111-111111111111"
 
-    @pytest.mark.unit
     def test_source_admin_org_summary_is_computed_from_filtered_codebases(
         self,
         mock_s3_client,
@@ -513,7 +499,6 @@ class TestAnalyticsFiltering:
         assert result.total_codebases == 1
         assert result.codebases_with_analytics == 1
 
-    @pytest.mark.unit
     def test_super_admin_org_summary_reads_precomputed_file(
         self, mock_s3_client, mock_session, mock_super_admin_user
     ):
@@ -571,7 +556,6 @@ class TestProviderEnrichment:
         with patch("app.services.analytics_service.is_super_admin", return_value=True):
             return AnalyticsService(mock_session, mock_user)
 
-    @pytest.mark.unit
     def test_get_provider_for_codebase_github(self, service, mock_session):
         """Test provider lookup returns 'github' for GitHub codebases."""
 
@@ -586,7 +570,6 @@ class TestProviderEnrichment:
 
         assert result == "github"
 
-    @pytest.mark.unit
     def test_get_provider_for_codebase_gitlab(self, service, mock_session):
         """Test provider lookup returns 'gitlab' for GitLab codebases."""
         codebase_id = str(uuid4())
@@ -600,7 +583,6 @@ class TestProviderEnrichment:
 
         assert result == "gitlab"
 
-    @pytest.mark.unit
     def test_get_provider_for_codebase_bitbucket(self, service, mock_session):
         """Test provider lookup returns 'bitbucket' for Bitbucket codebases."""
         codebase_id = str(uuid4())
@@ -614,7 +596,6 @@ class TestProviderEnrichment:
 
         assert result == "bitbucket"
 
-    @pytest.mark.unit
     def test_get_provider_for_codebase_azure_devops(self, service, mock_session):
         """Test provider lookup returns 'azure-devops' for Azure DevOps codebases."""
         codebase_id = str(uuid4())
@@ -628,7 +609,6 @@ class TestProviderEnrichment:
 
         assert result == "azure-devops"
 
-    @pytest.mark.unit
     def test_get_provider_for_codebase_not_found(self, service, mock_session):
         """Test provider lookup returns None when codebase not in DB."""
         codebase_id = str(uuid4())
@@ -638,7 +618,6 @@ class TestProviderEnrichment:
 
         assert result is None
 
-    @pytest.mark.unit
     def test_get_provider_for_codebase_no_provider_set(self, service, mock_session):
         """Test provider lookup returns None when provider is None."""
         codebase_id = str(uuid4())
@@ -652,7 +631,6 @@ class TestProviderEnrichment:
 
         assert result is None
 
-    @pytest.mark.unit
     def test_get_providers_for_codebases_batch(self, service, mock_session):
         """Test batch provider lookup for multiple codebases."""
         id1, id2 = str(uuid4()), str(uuid4())
@@ -675,7 +653,6 @@ class TestProviderEnrichment:
         assert result[id1] == "github"
         assert result[id2] == "gitlab"
 
-    @pytest.mark.unit
     def test_get_providers_for_codebases_empty_list(self, service, mock_session):
         """Test batch provider lookup with empty list."""
         result = service._get_providers_for_codebases([])
@@ -683,7 +660,6 @@ class TestProviderEnrichment:
         assert result == {}
         mock_session.query.assert_not_called()
 
-    @pytest.mark.unit
     def test_overview_includes_provider(self, service, mock_s3_client, mock_session):
         """Test that get_overview enriches response with provider."""
         codebase_id = str(uuid4())
@@ -752,7 +728,6 @@ class TestJSONParsingEdgeCases:
         with patch("app.services.analytics_service.is_super_admin", return_value=True):
             return AnalyticsService(mock_session, mock_user)
 
-    @pytest.mark.unit
     def test_empty_json_object(self, service, mock_s3_client):
         """Test handling of empty JSON object '{}'."""
         mock_s3_client.get_object.return_value = {"Body": MagicMock(read=lambda: b"{}")}
@@ -763,7 +738,6 @@ class TestJSONParsingEdgeCases:
         # the check `if not data` treats it as falsy, returning None
         assert result is None
 
-    @pytest.mark.unit
     def test_extra_unknown_fields_ignored(self, service, mock_s3_client):
         """Test that extra fields in JSON are handled gracefully by Pydantic."""
         s3_data = {
@@ -802,7 +776,6 @@ class TestJSONParsingEdgeCases:
         # Extra fields are not accessible on the Pydantic model (they're ignored)
         assert not hasattr(result, "unknown_future_field")
 
-    @pytest.mark.unit
     def test_null_values_for_optional_fields(self, service, mock_s3_client):
         """Test handling of null values for optional datetime fields."""
         s3_data = {
@@ -836,7 +809,6 @@ class TestJSONParsingEdgeCases:
         assert result.last_commit_date is None
         assert result.primary_language is None
 
-    @pytest.mark.unit
     def test_empty_codebases_list(self, service, mock_s3_client):
         """Test handling of codebases_list.json with empty codebases array."""
         s3_data = {
@@ -854,7 +826,6 @@ class TestJSONParsingEdgeCases:
         assert result.codebases == []
         assert len(result.codebases) == 0
 
-    @pytest.mark.unit
     def test_empty_branches_list(self, service, mock_s3_client):
         """Test handling of branches.json with empty branches array."""
         s3_data = {
@@ -870,7 +841,6 @@ class TestJSONParsingEdgeCases:
         assert result is not None
         assert result.branches == []
 
-    @pytest.mark.unit
     def test_empty_activity_list(self, service, mock_s3_client):
         """Test handling of activity.json with empty daily_activity array."""
         s3_data = {
@@ -886,7 +856,6 @@ class TestJSONParsingEdgeCases:
         assert result is not None
         assert result.daily_activity == []
 
-    @pytest.mark.unit
     def test_empty_ownership_directories(self, service, mock_s3_client):
         """Test handling of ownership.json with empty directories array."""
         s3_data = {
@@ -925,7 +894,6 @@ class TestFilteringEdgeCases:
         user.organization_id = str(uuid4())
         return user
 
-    @pytest.mark.unit
     def test_source_admin_no_administered_codebases(
         self, mock_s3_client, mock_session, mock_source_admin_user
     ):
@@ -964,7 +932,6 @@ class TestFilteringEdgeCases:
         assert result.codebases == []
         assert len(result.codebases) == 0
 
-    @pytest.mark.unit
     def test_source_admin_all_codebases_administered(
         self, mock_s3_client, mock_session, mock_source_admin_user
     ):
@@ -1012,7 +979,6 @@ class TestFilteringEdgeCases:
         assert result is not None
         assert len(result.codebases) == 2
 
-    @pytest.mark.unit
     def test_org_summary_empty_when_no_administered_codebases(
         self, mock_s3_client, mock_session, mock_source_admin_user
     ):
@@ -1052,7 +1018,6 @@ class TestFilteringEdgeCases:
         assert result.total_codebases == 0
         assert result.codebases_with_analytics == 0
 
-    @pytest.mark.unit
     def test_org_summary_handles_missing_optional_fields(
         self, mock_s3_client, mock_session, mock_source_admin_user
     ):

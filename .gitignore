@@ -188,3 +188,6 @@ cython_debug/
 
 /dev_stack/state/
 /dev_stack/static/gh.html
+
+# Lambda uv.lock copies (generated during deploy from root uv.lock)
+lambdas/*/uv.lock

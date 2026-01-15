@@ -25,9 +25,10 @@ def native_commit_processing_available():
         return False
 
 
-# Skip all tests if native commit processing not available
-pytestmark = pytest.mark.skipif(
+# xfail all tests if native commit processing not available
+pytestmark = pytest.mark.xfail(
     not native_commit_processing_available(),
+    run=False,
     reason="Native commit processing not implemented yet",
 )
 

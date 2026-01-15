@@ -3,7 +3,32 @@
 TDD: These tests are written BEFORE implementation.
 """
 
-from analytics_native import CommitWithParent, calculate_tree_sizes_incremental
+import pytest
+
+
+def native_checkpoint_available():
+    """Check if the native checkpoint functions are available."""
+    try:
+        from analytics_native import (  # noqa: F401
+            CommitWithParent,
+            calculate_tree_sizes_incremental,
+        )
+
+        return True
+    except ImportError:
+        return False
+
+
+# xfail all tests if native extension not available
+pytestmark = pytest.mark.xfail(
+    not native_checkpoint_available(),
+    run=False,
+    reason="Native extension not installed",
+)
+
+# Conditional import to avoid collection errors when module not available
+if native_checkpoint_available():
+    from analytics_native import CommitWithParent, calculate_tree_sizes_incremental
 
 
 class TestRustCheckpointCallback:

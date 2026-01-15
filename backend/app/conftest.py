@@ -33,12 +33,16 @@ def integration_db_engine() -> Generator[Engine, None, None]:
     - TODO: Consider using Alembic once migration heads are merged
     """
     from database.models import (
+        Action,
         GitProviderApp,
         GitProviderAppInstallation,
         Organization,
         OrgMembership,
         PrimaryAsset,
         PrimaryAssetRoleGrant,
+        RoleActionAllowAsset,
+        RoleActionAllowOrg,
+        RoleActionAllowTeam,
         Team,
         TeamMembership,
         User,
@@ -56,6 +60,7 @@ def integration_db_engine() -> Generator[Engine, None, None]:
     engine = create_engine(db_url, echo=False)  # Set to True for SQL debugging
 
     # Create only the tables needed for integration tests
+    # Note: Action must come before RoleActionAllow* tables due to FK constraints
     tables_to_create = [
         Organization.__table__,
         User.__table__,
@@ -67,6 +72,10 @@ def integration_db_engine() -> Generator[Engine, None, None]:
         PrimaryAsset.__table__,
         Version.__table__,
         PrimaryAssetRoleGrant.__table__,
+        Action.__table__,
+        RoleActionAllowAsset.__table__,
+        RoleActionAllowOrg.__table__,
+        RoleActionAllowTeam.__table__,
     ]
     SQLModel.metadata.create_all(engine, tables=tables_to_create)
 

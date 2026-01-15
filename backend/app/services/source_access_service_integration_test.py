@@ -501,10 +501,10 @@ class TestOrganizationIsolation:
         Test that users cannot access teams from other organizations.
 
         Steps:
-        1. User A in Org 1 creates Team X
-        2. User B in Org 2 attempts to get Team X
-        3. Verify User B gets None/404
-        4. User B lists teams - verify Team X not included
+        1. Create Team X in Org 1
+        2. Create Team Y in Org 2 with User B as member
+        3. User B attempts to get Team X - should fail with 404
+        4. User B lists teams - should only see Team Y (their own org team)
         """
         org1_id = "org-1-id"
         org2_id = "org-2-id"
@@ -515,18 +515,24 @@ class TestOrganizationIsolation:
             integration_db_session, name="Org 1 Team", organization_id=org1_id
         )
 
-        # Create team in Org 2
+        # Create user and team in Org 2, with user as team member
+        user_org2 = Auth0UserFactory.create(
+            integration_db_session, organization_id=org2_id
+        )
         team_org2 = TeamFactory.create(
             integration_db_session, name="Org 2 Team", organization_id=org2_id
         )
+        TeamMembershipFactory.create(
+            integration_db_session, team_id=team_org2.id, user_id=user_org2.id
+        )
 
         # User in Org 2 attempts to get Org 1's team
-        mock_user_org2 = create_mock_user(org2_id)
+        mock_user_org2 = create_mock_user(org2_id, user_id=user_org2.id)
         with pytest.raises(HTTPException) as exc_info:
             team_service.get_team(user=mock_user_org2, team_id=team_org1.id)
         assert exc_info.value.status_code == 404
 
-        # User in Org 2 lists teams - should only see Org 2 teams
+        # User in Org 2 lists teams - should only see Org 2 teams they're a member of
         org2_teams = team_service.get_teams(user=mock_user_org2, limit=10, offset=0)
         assert org2_teams.total == 1
         assert org2_teams.teams[0].id == str(team_org2.id)

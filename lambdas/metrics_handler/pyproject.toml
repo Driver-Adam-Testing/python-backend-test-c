@@ -27,17 +27,6 @@ package = false
 [tool.uv.sources]
 database = { workspace = true }
 
-[tool.poetry]
-name = "metrics-handler"
-version = "0.1.0"
-description = ""
-authors = ["Eric Miller <146128069+eric-driverai@users.noreply.github.com>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-database = { path = "../../packages/driver_db", develop = true }
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

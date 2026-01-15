@@ -26,13 +26,3 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.poetry]
-name = "database"
-version = "0.1.0"
-description = ""
-authors = ["Admin <admin@example.com>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
