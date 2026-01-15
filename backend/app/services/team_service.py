@@ -75,9 +75,6 @@ class TeamService:
     ) -> TeamResponse:
         """Raises HTTPException if team name already exists or validation fails."""
         organization_id = user.organization_id
-        logger.info(
-            f"Creating team '{request.name}' for organization {organization_id} by user {user.user_id}"
-        )
 
         # Create team
         team = Team(
@@ -141,8 +138,19 @@ class TeamService:
                 detail="Failed to retrieve created team",
             )
 
+        initial_members = [
+            {"user_id": m.user_id, "role": m.role.value}
+            for m in (request.members or [])
+        ]
         logger.info(
-            f"Team '{request.name}' created successfully with ID {created_team.id}"
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, team_name=%s, initial_members=%s",
+            "team.create",
+            user.user_id,
+            organization_id,
+            user.organization_display_name,
+            str(created_team.id),
+            request.name,
+            initial_members,
         )
         return team_dict_to_response(team_with_counts)
 
@@ -253,9 +261,6 @@ class TeamService:
     ) -> TeamResponse:
         """Raises HTTPException if team not found or name already exists."""
         organization_id = user.organization_id
-        logger.info(
-            f"Updating team {team_id} to name '{request.name}' by user {user.user_id}"
-        )
 
         # Get existing team
         team = team_repository.get_team_by_id(
@@ -270,6 +275,9 @@ class TeamService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Team not found",
             )
+
+        # Capture old name for logging
+        old_name = team.name
 
         # Update team
         team.name = request.name.strip()
@@ -308,7 +316,16 @@ class TeamService:
                 detail="Failed to retrieve updated team",
             )
 
-        logger.info(f"Team {team_id} updated successfully")
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, old_name=%s, new_name=%s",
+            "team.update",
+            user.user_id,
+            organization_id,
+            user.organization_display_name,
+            str(team_id),
+            old_name,
+            request.name.strip(),
+        )
         return team_dict_to_response(team_with_counts)
 
     def delete_team(
@@ -318,7 +335,6 @@ class TeamService:
     ) -> None:
         """Also deletes memberships and source grants. Raises HTTPException if not found."""
         organization_id = user.organization_id
-        logger.info(f"Deleting team {team_id} by user {user.user_id}")
 
         # Verify team exists and belongs to organization
         team = team_repository.get_team_by_id(
@@ -333,6 +349,9 @@ class TeamService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Team not found",
             )
+
+        # Capture team name for logging before deletion
+        team_name = team.name
 
         try:
             # Delete source grants for this team
@@ -355,7 +374,15 @@ class TeamService:
             # Delete team
             self.session.delete(team)
             self.session.commit()
-            logger.info(f"Team {team_id} deleted successfully")
+            logger.info(
+                "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, team_id=%s, team_name=%s",
+                "team.delete",
+                user.user_id,
+                organization_id,
+                user.organization_display_name,
+                str(team_id),
+                team_name,
+            )
         except Exception as e:
             self.session.rollback()
             logger.error(f"Failed to delete team {team_id}: {e}")

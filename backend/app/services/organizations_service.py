@@ -86,6 +86,15 @@ class OrganizationsService:
 
         # Only delete from database if Auth0 deletion succeeded
         delete_organization_membership(self.session, membership)
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, removed_user_id=%s, removed_user_role=%s",
+            "org.member.delete",
+            user.user_id,
+            user.organization_id,
+            user.organization_display_name,
+            user_id,
+            membership.role.value,
+        )
 
     def update_member_role(
         self,
@@ -120,9 +129,23 @@ class OrganizationsService:
                 404, f"User {modified_user_id} is not a member of this organization"
             )
 
+        # Capture old role for logging
+        old_role = membership.role.value
+
         # Update role
         update_organization_role(
             self.session, modified_user_id, user.organization_id, new_role
+        )
+
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, old_role=%s, new_role=%s",
+            "org.member.role.update",
+            user.user_id,
+            user.organization_id,
+            user.organization_display_name,
+            modified_user_id,
+            old_role,
+            new_role.value,
         )
 
         # Return the new role with org context
@@ -156,6 +179,15 @@ class OrganizationsService:
         if not bulk_input.members:
             raise HTTPException(400, "No members provided to update")
 
+        # Capture old roles for logging
+        old_roles: dict[str, str] = {}
+        for member in bulk_input.members:
+            membership = get_organization_membership(
+                self.session, member.user_id, user.organization_id
+            )
+            if membership:
+                old_roles[member.user_id] = membership.role.value
+
         # Prepare role updates as list of tuples
         role_updates = [(member.user_id, member.role) for member in bulk_input.members]
 
@@ -167,6 +199,24 @@ class OrganizationsService:
         except ValueError as e:
             # Repository raises ValueError if any user not found
             raise HTTPException(404, str(e))
+
+        # Log the changes
+        changes = [
+            {
+                "user_id": member.user_id,
+                "old_role": old_roles.get(member.user_id),
+                "new_role": member.role.value,
+            }
+            for member in bulk_input.members
+        ]
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, changes=%s",
+            "org.member.role.bulk_update",
+            user.user_id,
+            user.organization_id,
+            user.organization_display_name,
+            changes,
+        )
 
         # Build response
         updated_users = [
