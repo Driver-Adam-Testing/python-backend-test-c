@@ -37,6 +37,10 @@ from workflows.onboarding_workflows import (
 )
 from workflows.pdf_processing_workflow import pdf_processing_task
 
+# Suppress noisy HTTP/AWS library loggers before basicConfig
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("botocore").setLevel(logging.WARNING)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

@@ -1,4 +1,7 @@
-from hatchet_sdk import Hatchet
+import logging
 
-# Initialize Hatchet client
-hatchet = Hatchet()
+from hatchet_sdk import ClientConfig, Hatchet
+
+hatchet = Hatchet(
+    config=ClientConfig(logger=logging.getLogger()),
+)

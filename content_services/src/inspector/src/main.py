@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import os
 import uuid
@@ -195,15 +196,21 @@ async def inspect_db(
                 )
                 download_path = Path(download_dir) / f"{version_id}.zip"
                 print(f"downloading zip to {download_path}")
-                metadata = s3_client.head_object(
-                    Bucket=org_hashed_id, Key=download_archive_key
+                metadata = await asyncio.to_thread(
+                    s3_client.head_object,
+                    Bucket=org_hashed_id,
+                    Key=download_archive_key,
                 )
                 install_id = metadata["Metadata"].get("install_id")
-                s3_client.download_file(
-                    org_hashed_id, download_archive_key, download_path
+                await asyncio.to_thread(
+                    s3_client.download_file,
+                    org_hashed_id,
+                    download_archive_key,
+                    download_path,
                 )
 
-                extracted_path = unpack_archive_to_finalized_path(
+                extracted_path = await asyncio.to_thread(
+                    unpack_archive_to_finalized_path,
                     archive_path=download_path,
                     extraction_root=Path(download_dir),
                     override_codebase_name=codebase_name,
@@ -213,7 +220,8 @@ async def inspect_db(
                 db_version_node_paths = {
                     version_node.relative_path for version_node in db_file_version_nodes
                 }
-                file_paths = process_and_upload_all_files_in_parallel(
+                file_paths = await asyncio.to_thread(
+                    process_and_upload_all_files_in_parallel,
                     s3_client=s3_client,
                     org_hashed_id=org_hashed_id,
                     primary_asset_id=version.primary_asset_id,
@@ -228,7 +236,8 @@ async def inspect_db(
                     set_codebase_status(version_id, VersionStatus.GENERATING)
             else:
                 print("Downloading all source files for codebase from s3...")
-                file_paths = download_all_source_files_in_parallel(
+                file_paths = await asyncio.to_thread(
+                    download_all_source_files_in_parallel,
                     s3_client=s3_client,
                     bucket_name=org_hashed_id,
                     primary_asset_id=str(version.primary_asset.id),
@@ -257,7 +266,8 @@ async def inspect_db(
                 # If so - we still need to do all of this stuff
                 previous_download_root = Path(previous_download_dir)
                 print("Downloading all source files for previous codebase from s3...")
-                previous_file_paths = download_all_source_files_in_parallel(
+                previous_file_paths = await asyncio.to_thread(
+                    download_all_source_files_in_parallel,
                     s3_client=s3_client,
                     bucket_name=org_hashed_id,
                     primary_asset_id=str(previous_version.primary_asset.id),
