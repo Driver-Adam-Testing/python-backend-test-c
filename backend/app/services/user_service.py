@@ -107,18 +107,6 @@ class UserService:
             HTTPException: If team not found or user already in team
         """
         organization_id = user.organization_id
-        teams_info = [
-            {"team_id": t.team_id, "role": t.role.value} for t in request.teams
-        ]
-        logger.info(
-            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, teams=%s",
-            "user.team.add",
-            user.user_id,
-            organization_id,
-            user.organization_display_name,
-            user_id,
-            teams_info,
-        )
         for team_input in request.teams:
             team_id = UUID(team_input.team_id)
 
@@ -152,10 +140,21 @@ class UserService:
                 user_id=user_id,
                 role=team_input.role,
             )
-            user_repository.create_user_team_membership(
-                session=self.session,
-                membership=membership,
-            )
+            self.session.add(membership)
+
+        self.session.commit()
+        teams_info = [
+            {"team_id": t.team_id, "role": t.role.value} for t in request.teams
+        ]
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, teams=%s",
+            "user.team.add",
+            user.user_id,
+            organization_id,
+            user.organization_display_name,
+            user_id,
+            teams_info,
+        )
 
     def update_user_teams(
         self,
@@ -245,15 +244,6 @@ class UserService:
             HTTPException: If team not found or user not in team
         """
         organization_id = user.organization_id
-        logger.info(
-            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, removed_team_ids=%s",
-            "user.team.remove",
-            user.user_id,
-            organization_id,
-            user.organization_display_name,
-            user_id,
-            request.team_ids,
-        )
         for team_id_str in request.team_ids:
             team_id = UUID(team_id_str)
 
@@ -282,10 +272,18 @@ class UserService:
                 )
 
             # Delete membership
-            user_repository.delete_user_team_membership(
-                session=self.session,
-                membership=membership,
-            )
+            self.session.delete(membership)
+
+        self.session.commit()
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, removed_team_ids=%s",
+            "user.team.remove",
+            user.user_id,
+            organization_id,
+            user.organization_display_name,
+            user_id,
+            request.team_ids,
+        )
 
     def get_user_sources(
         self,
@@ -351,18 +349,6 @@ class UserService:
             HTTPException: If source not found or user already has access
         """
         organization_id = user.organization_id
-        sources_info = [
-            {"source_id": s.source_id, "role": s.role.value} for s in request.sources
-        ]
-        logger.info(
-            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, sources=%s",
-            "user.source.add",
-            user.user_id,
-            organization_id,
-            user.organization_display_name,
-            user_id,
-            sources_info,
-        )
         for source_input in request.sources:
             source_id = UUID(source_input.source_id)
 
@@ -401,10 +387,21 @@ class UserService:
                 user_id=user_id,
                 role=source_input.role,
             )
-            user_repository.create_user_source_grant(
-                session=self.session,
-                grant=grant,
-            )
+            self.session.add(grant)
+
+        self.session.commit()
+        sources_info = [
+            {"source_id": s.source_id, "role": s.role.value} for s in request.sources
+        ]
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, sources=%s",
+            "user.source.add",
+            user.user_id,
+            organization_id,
+            user.organization_display_name,
+            user_id,
+            sources_info,
+        )
 
     def update_user_sources(
         self,
@@ -490,15 +487,6 @@ class UserService:
             HTTPException: If source not found or user doesn't have access
         """
         organization_id = user.organization_id
-        logger.info(
-            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, removed_source_ids=%s",
-            "user.source.remove",
-            user.user_id,
-            organization_id,
-            user.organization_display_name,
-            user_id,
-            request.source_ids,
-        )
         for source_id_str in request.source_ids:
             source_id = UUID(source_id_str)
 
@@ -523,10 +511,18 @@ class UserService:
                 )
 
             # Delete grant
-            user_repository.delete_user_source_grant(
-                session=self.session,
-                grant=grant,
-            )
+            self.session.delete(grant)
+
+        self.session.commit()
+        logger.info(
+            "RBAC mutation: action=%s, user_id=%s, org_id=%s, org_name=%s, target_user_id=%s, removed_source_ids=%s",
+            "user.source.remove",
+            user.user_id,
+            organization_id,
+            user.organization_display_name,
+            user_id,
+            request.source_ids,
+        )
 
     def _build_user_team_response(self, data: dict) -> UserTeamResponse:
         """Build UserTeamResponse from repository data."""
