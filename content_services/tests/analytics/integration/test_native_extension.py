@@ -22,9 +22,9 @@ def native_extension_available():
         return False
 
 
-# Skip all tests in this module if native extension not available
-pytestmark = pytest.mark.skipif(
-    not native_extension_available(), reason="Native extension not installed"
+# xfail all tests in this module if native extension not available
+pytestmark = pytest.mark.xfail(
+    not native_extension_available(), run=False, reason="Native extension not installed"
 )
 
 

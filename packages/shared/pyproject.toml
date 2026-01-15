@@ -31,14 +31,3 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 database = { workspace = true }
-
-[tool.poetry]
-name = "shared"
-version = "0.1.0"
-description = ""
-authors = ["Neil Zumwalde <neilzumwalde@gmail.com>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-database = { path = "../driver_db", develop = true }

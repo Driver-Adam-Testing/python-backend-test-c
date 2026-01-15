@@ -15,6 +15,17 @@ Key behaviors tested:
 from datetime import UTC, date, datetime
 from unittest.mock import MagicMock
 
+import pytest
+
+
+def native_extension_available():
+    try:
+        from analytics_native import calculate_tree_sizes_incremental  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
 
 class TestChunkCallbackCreation:
     """Test creating chunk callback for extraction."""
@@ -255,6 +266,11 @@ class TestChunkCallbackBehavior:
         mock_s3.upload_fileobj.assert_not_called()
 
 
+@pytest.mark.xfail(
+    not native_extension_available(),
+    run=False,
+    reason="Requires native extension for checkpoint callbacks",
+)
 class TestChunkCallbackCheckpoint:
     """Test checkpoint integration with chunk callback."""
 
@@ -510,6 +526,11 @@ class TestChunkCallbackResume:
         commit_keys = [k for k in uploaded_keys if "commits/" in k]
         assert "chunk_00005.parquet" in commit_keys[0]
 
+    @pytest.mark.xfail(
+        not native_extension_available(),
+        run=False,
+        reason="Requires native extension for checkpoint callbacks",
+    )
     def test_callback_preserves_processed_shas_from_checkpoint(self):
         """Callback should preserve processed SHAs from checkpoint."""
         from analytics.pipeline.phases.extract import create_chunk_callback

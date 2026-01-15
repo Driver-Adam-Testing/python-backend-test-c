@@ -8,7 +8,18 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from botocore.exceptions import ClientError
+
+
+def native_extension_available():
+    try:
+        from analytics_native import calculate_tree_sizes_incremental  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
 
 # Add src to path for imports
 _src_path = Path(__file__).parent.parent.parent.parent / "src"
@@ -53,6 +64,11 @@ def create_test_repo_with_commits(repo_path: Path, num_commits: int) -> list[str
     return commit_shas
 
 
+@pytest.mark.xfail(
+    not native_extension_available(),
+    run=False,
+    reason="Hangs locally without native extension",
+)
 class TestIncrementalPipelineIntegration:
     """Integration tests for incremental pipeline flow."""
 

@@ -1,14 +1,14 @@
+from pathlib import Path
+
 from aws_cdk import (
-    DockerImage,
     Duration,
     RemovalPolicy,
     aws_cloudwatch,
     aws_cloudwatch_actions,
     aws_ec2,
+    aws_ecr_assets,
     aws_lambda,
-    aws_lambda_python_alpha,
     aws_logs,
-    aws_route53,
     aws_secretsmanager,
     aws_sns,
     aws_ssm,
@@ -21,6 +21,9 @@ from aws_cdk import (
 )
 from constructs import Construct
 from cdk.settings import settings
+
+# Workspace root (where uv.lock and pyproject.toml live)
+WORKSPACE_ROOT = Path(__file__).parent.parent.parent
 
 
 class Auth0EventLambda(Construct):
@@ -66,12 +69,15 @@ class Auth0EventLambda(Construct):
             lambda_concurrent_executions = 10
 
         # Create Lambda function
-        self.lambda_function = aws_lambda_python_alpha.PythonFunction(
+        self.lambda_function = aws_lambda.DockerImageFunction(
             scope,
             "Auth0EventProcessorLambda",
-            entry="lambdas/auth0_event_processor",
-            runtime=aws_lambda.Runtime.PYTHON_3_12,
-            index="src/main.py",
+            code=aws_lambda.DockerImageCode.from_image_asset(
+                directory=str(WORKSPACE_ROOT),
+                file="lambdas/auth0_event_processor/Dockerfile.lambda",
+                platform=aws_ecr_assets.Platform.LINUX_AMD64,
+            ),
+            architecture=aws_lambda.Architecture.X86_64,
             vpc=vpc,
             vpc_subnets=aws_ec2.SubnetSelection(
                 subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_EGRESS
@@ -86,16 +92,6 @@ class Auth0EventLambda(Construct):
                 "HATCHET_CLIENT_TOKEN_SECRET_NAME": hatchet_token_secret.secret_name,
                 "HATCHET_CLIENT_TLS_STRATEGY": "none",
             },
-            bundling=aws_lambda_python_alpha.BundlingOptions(
-                platform="linux/amd64",
-                poetry_include_hashes=False,
-                asset_excludes=[".venv", "tests/", ".pytest*"],
-                image=DockerImage.from_build(
-                    path=".",
-                    file="Dockerfile.lambda-bundler",
-                    platform="linux/amd64",
-                ),
-            ),
             reserved_concurrent_executions=lambda_concurrent_executions,
             timeout=Duration.seconds(60),
         )

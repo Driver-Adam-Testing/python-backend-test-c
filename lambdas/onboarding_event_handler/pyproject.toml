@@ -22,16 +22,6 @@ dev = [
 [tool.uv]
 package = false
 
-[tool.poetry]
-name = "onboarding-event-handler"
-version = "0.1.0"
-description = ""
-authors = ["Eric Miller <146128069+eric-driverai@users.noreply.github.com>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

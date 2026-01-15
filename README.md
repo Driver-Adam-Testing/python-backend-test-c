@@ -1,5 +1,113 @@
 # Driver AI Monorepo
 
+## Dependency Management (UV Workspaces)
+
+This monorepo uses [UV workspaces](https://docs.astral.sh/uv/concepts/workspaces/) with a **single `uv.lock`** file at the root. All workspace members share this lockfile, ensuring consistent versions across all apps.
+
+### Workspace Structure
+
+```
+driver-ai-app/
+├── pyproject.toml              # Workspace config
+├── uv.lock                     # Single source of truth for all deps
+├── backend/                    # FastAPI backend (project: app)
+├── content_services/           # Hatchet workflows (project: hatchet-python)
+├── packages/
+│   ├── driver_db/              # Database models (project: database)
+│   └── shared/                 # Shared utilities (project: shared)
+└── lambdas/
+    ├── auth0_event_processor/
+    ├── metrics_handler/
+    └── onboarding_event_handler/
+```
+
+### Common Commands
+
+**Always run from the workspace root**, not from inside an app directory.
+
+```bash
+# Sync all workspace packages
+uv sync --all-packages
+
+# Sync a specific package only
+uv sync --package app
+uv sync --package hatchet-python
+
+# Run the backend (FastAPI) - auto-detects app/main.py
+uv run --package app fastapi dev
+
+# Run the hatchet worker
+uv run --package hatchet-python worker
+```
+
+### Adding/Updating Dependencies
+
+```bash
+# Add a dependency to the backend
+uv add --package app some-package
+
+# Add a dependency to content_services
+uv add --package hatchet-python some-package
+
+# Add to a shared library (propagates to all dependents)
+uv add --package shared some-package
+uv add --package database some-package
+
+# Remove a dependency
+uv remove --package app some-package
+```
+
+### Security Patching / Upgrading Packages
+
+```bash
+# Upgrade a specific package across the entire workspace
+uv lock --upgrade-package boto3
+
+# Example: patch httpx for all apps that use it
+uv lock --upgrade-package httpx
+
+# Upgrade all packages (use with caution)
+uv lock --upgrade
+```
+
+After upgrading, resync to apply changes:
+```bash
+uv sync --all-packages
+```
+
+### Examples
+
+**Upgrade `boto3` across the workspace:**
+```bash
+# 1. Check current version
+grep 'name = "boto3"' uv.lock -A1
+
+# 2. Upgrade it
+uv lock --upgrade-package boto3
+
+# 3. Resync
+uv sync --all-packages
+
+# 4. Verify
+uv run --package app python -c "import boto3; print(boto3.__version__)"
+```
+
+**Add a new package to backend:**
+```bash
+uv add --package app redis
+```
+
+**Pin a specific version:**
+```bash
+uv add --package app "redis==5.0.0"
+```
+
+### Important Notes
+
+- **Never use `pip install`** - it bypasses the lockfile and causes version drift
+- **Run commands from workspace root** - not from inside package directories
+- **Shared packages propagate** - adding to `database` or `shared` affects all dependents
+- **One lockfile = one upgrade** - `uv lock --upgrade-package X` patches X everywhere
 
 ## Development
 

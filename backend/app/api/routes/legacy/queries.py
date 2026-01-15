@@ -3,7 +3,7 @@ import uuid
 
 import strawberry
 from app.api.routes.legacy.document_set import DocumentSet, get_document_set
-from app.api.routes.legacy.scalars import ID, NodeType
+from app.api.routes.legacy.scalars import NodeType
 from app.api.routes.legacy.tree import FlatNode, get_codebase_tree
 from app.authorization.fastapi import check_asset_action, check_org_action
 from app.repositories.github_app_installations_repository import (
@@ -50,8 +50,8 @@ class Query:
         info: Info,
         nodeKind: NodeType,
         path: str | None = None,
-        primaryAssetId: ID | None = None,
-        versionId: ID | None = None,
+        primaryAssetId: strawberry.ID | None = None,
+        versionId: strawberry.ID | None = None,
     ) -> DocumentSet:
         if path is None or versionId is None or primaryAssetId is None:
             raise GraphQLError(
@@ -86,9 +86,9 @@ class Query:
     def tree(
         self,
         info: Info,
-        codebaseId: ID | None = None,
-        workspaceId: ID | None = None,
-        versionId: ID | None = None,
+        codebaseId: strawberry.ID | None = None,
+        workspaceId: strawberry.ID | None = None,
+        versionId: strawberry.ID | None = None,
     ) -> list[FlatNode]:
         if versionId is None:
             raise GraphQLError(

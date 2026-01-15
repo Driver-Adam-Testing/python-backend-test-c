@@ -6,12 +6,31 @@ These tests verify that:
 1. Extraction can be interrupted and resumed
 2. Resumed extraction produces identical results to full extraction
 3. Checkpoint callback is called at appropriate intervals
+
+NOTE: These tests require the native Rust extension for checkpoint callbacks.
 """
 
 from datetime import UTC, datetime
 
 import pygit2
 import pytest
+
+
+def native_extension_available():
+    try:
+        from analytics_native import calculate_tree_sizes_incremental  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+# xfail all tests in this module if native extension not available
+pytestmark = pytest.mark.xfail(
+    not native_extension_available(),
+    run=False,
+    reason="Requires native extension for checkpoint callbacks",
+)
 
 
 class TestExtractCheckpointIntegration:

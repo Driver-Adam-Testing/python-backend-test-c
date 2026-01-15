@@ -270,16 +270,21 @@ class TestDuplicatePrevention:
         ).all()
         assert len(memberships) == 1
 
-    def test_prevent_duplicate_source_grant(
+    def test_source_grant_upsert_behavior(
         self, integration_db_session: Session
     ) -> None:
         """
-        Test that adding a source to a team twice returns 409 Conflict.
+        Test that adding a source to a team is idempotent (upsert behavior).
+
+        The service uses upsert semantics:
+        - If not assigned: add with specified role
+        - If already assigned with different role: update to new role
+        - If already assigned with same role: no-op
 
         Steps:
-        1. Add source to team
-        2. Attempt to add same source again
-        3. Verify returns 409 Conflict
+        1. Add source to team with asset_admin role
+        2. Add same source again with asset_member role
+        3. Verify role was updated (not duplicated)
         4. Verify only one grant exists
         """
         org_id = "test-org-id"
@@ -292,7 +297,7 @@ class TestDuplicatePrevention:
             integration_db_session, organization_id=org_id
         )
 
-        # Add source to team
+        # Add source to team with asset_admin role
         service.add_team_sources(
             user=mock_user,
             team_id=team.id,
@@ -301,20 +306,16 @@ class TestDuplicatePrevention:
             ),
         )
 
-        # Attempt to add same source again
-        with pytest.raises(HTTPException) as exc_info:
-            service.add_team_sources(
-                user=mock_user,
-                team_id=team.id,
-                request=AddTeamSourcesRequest(
-                    sources=[
-                        TeamSourceInput(source_id=str(source.id), role="asset_member")
-                    ]
-                ),
-            )
-        assert exc_info.value.status_code == 400  # Duplicate should be 400, not 409
+        # Add same source again with different role - should update, not error
+        service.add_team_sources(
+            user=mock_user,
+            team_id=team.id,
+            request=AddTeamSourcesRequest(
+                sources=[TeamSourceInput(source_id=str(source.id), role="asset_member")]
+            ),
+        )
 
-        # Verify only one grant exists
+        # Verify only one grant exists and role was updated
         from database.models import PrimaryAssetRoleGrant
 
         grants = integration_db_session.exec(
@@ -324,3 +325,4 @@ class TestDuplicatePrevention:
             )
         ).all()
         assert len(grants) == 1
+        assert grants[0].role.value == "asset_member"

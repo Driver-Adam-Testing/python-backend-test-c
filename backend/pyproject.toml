@@ -56,28 +56,15 @@ build-backend = "hatchling.build"
 database = { workspace = true }
 shared = { workspace = true }
 
-[tool.poetry]
-name = "app"
-version = "0.1.0"
-description = ""
-authors = ["Admin <admin@example.com>"]
-packages = [{include = "app"}]
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-database = { path = "../packages/driver_db", develop = true }
-shared = { path = "../packages/shared", develop = true }
-
 [tool.mypy]
 strict = true
 exclude = ["venv", "alembic"]
 
 [tool.pytest.ini_options]
 markers = [
-    "unit: Unit tests with mocked dependencies (default)",
-    "integration: Integration tests with real database (in-memory SQLite)"
+    "integration: Integration tests with real database (Testcontainers)"
 ]
-addopts = "--cov --cov-report=term-missing --cov-report=xml:coverage/coverage.xml"
+addopts = "--strict-markers --cov --cov-report=term-missing --cov-report=xml:coverage/coverage.xml"
 
 [tool.coverage]
 omit = ["**/*_test.py", "**/tests/**"]

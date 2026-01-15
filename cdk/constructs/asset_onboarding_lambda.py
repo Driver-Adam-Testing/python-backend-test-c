@@ -1,15 +1,15 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 from aws_cdk import (
-    DockerImage,
     Duration,
     aws_cloudwatch,
     aws_cloudwatch_actions,
     aws_ec2,
+    aws_ecr_assets,
     aws_iam,
     aws_lambda,
     aws_lambda_event_sources,
-    aws_lambda_python_alpha,
     aws_s3,
     aws_s3_notifications,
     aws_secretsmanager,
@@ -19,6 +19,9 @@ from aws_cdk import (
 from constructs import Construct
 
 from cdk.settings import settings
+
+# Workspace root (where uv.lock and pyproject.toml live)
+WORKSPACE_ROOT = Path(__file__).parent.parent.parent
 
 
 @dataclass
@@ -43,12 +46,15 @@ class AssetOnboardingLambda(Construct):
             self, "deployment_secrets", secret_name=settings.SECRECTS_NAME
         )
 
-        lambda_function = aws_lambda_python_alpha.PythonFunction(
+        lambda_function = aws_lambda.DockerImageFunction(
             scope,
             "AssetOnboardingLambdaPy",
-            entry="lambdas/onboarding_event_handler",
-            runtime=aws_lambda.Runtime.PYTHON_3_12,
-            index="src/main.py",
+            code=aws_lambda.DockerImageCode.from_image_asset(
+                directory=str(WORKSPACE_ROOT),
+                file="lambdas/onboarding_event_handler/Dockerfile.lambda",
+                platform=aws_ecr_assets.Platform.LINUX_AMD64,
+            ),
+            architecture=aws_lambda.Architecture.X86_64,
             environment={
                 "ENVIRONMENT": params.environment,
                 "LOG_LEVEL": "INFO",
@@ -59,22 +65,13 @@ class AssetOnboardingLambda(Construct):
                 "AUTH0_URL": params.auth0_url,
                 "AWS_S3_CODE_BUCKET_SUFFIX": "codebase-dropzone",
                 "USE_LEGACY_DROPZONE": str(params.use_legacy_dropzone),
-                # Optional settings need fixed since they seem to get set 
+                # Optional settings need fixed since they seem to get set
                 # in all the envs and cause problems. Disabling for now.
                 # "SENTRY_DSN": "FIXME"
                 # if params.is_private_deploy
                 # else settings.SENTRY_DSN,
                 "IS_PRIVATE_DEPLOY": str(params.is_private_deploy),
             },
-            bundling=aws_lambda_python_alpha.BundlingOptions(
-                platform="linux/amd64",
-                asset_excludes=[".venv", ".env", "tests/", ".pytest*"],
-                image=DockerImage.from_build(
-                    path=".",
-                    file="Dockerfile.lambda-bundler",
-                    platform="linux/amd64",
-                ),
-            ),
             timeout=Duration.seconds(15),
             vpc=params.vpc,
             vpc_subnets=aws_ec2.SubnetSelection(subnet_group_name="Private"),

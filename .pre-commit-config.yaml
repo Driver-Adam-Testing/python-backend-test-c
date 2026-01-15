@@ -23,16 +23,9 @@ repos:
       - id: ruff-format
   - repo: local
     hooks:
-      - id: propagate-deps-updates
-        name: Check pyproject.toml and lock files and propagate updates to parent projects
-        entry: bash deps-pre-commit.sh
-        language: system
-        files: ^.*(pyproject\.toml)$
-  - repo: local
-    hooks:
       - id: pytest-check
         name: pytest-check
-        entry: cd backend && pytest -m unit
+        entry: cd backend && pytest -m "not integration"
         language: system
         pass_filenames: false
         always_run: true
