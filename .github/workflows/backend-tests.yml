@@ -71,4 +71,5 @@ jobs:
           POSTGRES_PASSWORD: postgres
           PROJECT_NAME: test
           OPENAI_API_KEY: fake
+          ASYNC_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
         run: uv run pytest -m integration --no-cov -rsfE
