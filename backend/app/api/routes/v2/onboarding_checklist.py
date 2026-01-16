@@ -98,8 +98,9 @@ def _run_all_inferences(
 ) -> None:
     checklist = svc.checklist
     _infer_connect_codebase(session, user, svc, checklist)
-    _infer_generate_codebase(session, user, svc, checklist)
-    _infer_enable_export(session, user, svc, checklist)
+    # We don't need to infer generate codebase and enable export anymore because we don't use them in the onboarding checklist
+    # _infer_generate_codebase(session, user, svc, checklist)
+    # _infer_enable_export(session, user, svc, checklist)
     _infer_configured_rbac(session, user, svc, checklist)
     _infer_teams_completed(session, user, svc, checklist)
 
@@ -232,8 +233,12 @@ def _update_checklist_completion(
         ),
         _is_step_done(checklist.teams_completed_at, checklist.teams_skipped_at),
         _is_step_done(
-            checklist.generate_autodoc_completed_at,
-            checklist.generate_autodoc_skipped_at,
+            checklist.invite_teammate_completed_at,
+            checklist.invite_teammate_skipped_at,
+        ),
+        _is_step_done(
+            checklist.setup_mcp_completed_at,
+            checklist.setup_mcp_skipped_at,
         ),
     ]
 
@@ -254,8 +259,12 @@ def _update_checklist_completion(
             ),
             _get_step_timestamp(checklist.teams_completed_at, checklist.teams_skipped_at),
             _get_step_timestamp(
-                checklist.generate_autodoc_completed_at,
-                checklist.generate_autodoc_skipped_at,
+                checklist.invite_teammate_completed_at,
+                checklist.invite_teammate_skipped_at,
+            ),
+            _get_step_timestamp(
+                checklist.setup_mcp_completed_at,
+                checklist.setup_mcp_skipped_at,
             ),
         ]
         if ts is not None
