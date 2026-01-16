@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Self
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from database.db import async_engine
 from database.models import OnboardingChecklist
+
+logger = logging.getLogger(__name__)
 
 
 def _now_utc() -> datetime:
@@ -130,3 +135,21 @@ class OnboardingChecklistService:
         return self
 
 
+async def mark_setup_mcp_completed_async(organization_id: str, user_id: str) -> None:
+    """Mark MCP setup as completed for onboarding (fire-and-forget)."""
+    try:
+        async with AsyncSession(async_engine) as session:
+            checklist = (
+                await session.exec(
+                    select(OnboardingChecklist)
+                    .where(OnboardingChecklist.organization_id == organization_id)
+                    .where(OnboardingChecklist.user_id == user_id)
+                )
+            ).one_or_none()
+
+            if checklist and checklist.setup_mcp_completed_at is None:
+                checklist.setup_mcp_completed_at = datetime.now(timezone.utc)
+                session.add(checklist)
+                await session.commit()
+    except Exception:
+        logger.exception("Failed to mark MCP setup as completed")

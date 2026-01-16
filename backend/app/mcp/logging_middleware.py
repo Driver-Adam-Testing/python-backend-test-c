@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import StrEnum
 from logging import Formatter, LogRecord
 from typing import Any
@@ -10,10 +10,8 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult  # noqa: TCH002
 from pydantic import BaseModel, ValidationError
 
-from database.db import get_session
-
 from app.mcp.oauth_auth import get_user_from_token
-from app.services.onboarding_checklist_service import OnboardingChecklistService
+from app.services.onboarding_checklist_service import mark_setup_mcp_completed_async
 
 logger = logging.getLogger(__name__)
 
@@ -101,23 +99,10 @@ class McpLoggingMiddleware(Middleware):
         try:
             user = get_user_from_token()
             asyncio.create_task(
-                self._mark_mcp_setup_completed(user.organization_id, user.user_id)
+                mark_setup_mcp_completed_async(user.organization_id, user.user_id)
             )
         except Exception:
             logger.exception("Failed to get user for MCP setup completion tracking")
-
-    async def _mark_mcp_setup_completed(self, organization_id: str, user_id: str) -> None:
-        def _sync_mark():
-            with get_session() as session:
-                svc = OnboardingChecklistService.get_or_create_checklist(
-                    session, organization_id, user_id
-                )
-                svc.mark_setup_mcp_completed(datetime.now(timezone.utc))
-
-        try:
-            await asyncio.to_thread(_sync_mark)
-        except Exception:
-            logger.exception("Failed to mark MCP setup as completed")
 
     async def on_call_tool(self, ctx: MiddlewareContext, call_next: any) -> any:
         user = get_user_from_token()
