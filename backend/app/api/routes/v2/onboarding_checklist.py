@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
 from database.models import (
-    ApiKey,
     OnboardingChecklist,
     PrimaryAsset,
     PrimaryAssetRoleGrant,
@@ -100,7 +99,6 @@ def _run_all_inferences(
     checklist = svc.checklist
     _infer_connect_codebase(session, user, svc, checklist)
     _infer_generate_codebase(session, user, svc, checklist)
-    _infer_setup_mcp(session, user, svc, checklist)
     _infer_enable_export(session, user, svc, checklist)
     _infer_configured_rbac(session, user, svc, checklist)
     _infer_teams_completed(session, user, svc, checklist)
@@ -162,25 +160,6 @@ def _infer_generate_codebase(
     ).first()
     if first_completed_version is not None:
         svc.mark_generate_codebase_completed(first_completed_version.created_at)
-
-
-def _infer_setup_mcp(
-    session: CurrentSession,
-    user: UserToken,
-    svc: OnboardingChecklistService,
-    checklist: OnboardingChecklist,
-) -> None:
-    if _is_step_done(checklist.setup_mcp_completed_at, checklist.setup_mcp_skipped_at):
-        return
-    api_key = session.exec(
-        select(ApiKey)
-        .where(ApiKey.organization_id == user.organization_id)
-        .where(ApiKey.user_id == user.user_id)
-        .where(ApiKey.last_used_at.is_not(None))
-        .order_by(ApiKey.last_used_at.asc())
-    ).first()
-    if api_key is not None:
-        svc.mark_setup_mcp_completed(api_key.last_used_at)
 
 
 def _infer_enable_export(
