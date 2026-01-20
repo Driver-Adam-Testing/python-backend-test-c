@@ -3,7 +3,10 @@ line-length = 88
 target-version = "py312"
 fix = true
 
-exclude = ["content_services/inspector/src/utils/treesitter_drivers/treesitter_testcases/"]
+exclude = [
+    "content_services/inspector/src/utils/treesitter_drivers/treesitter_testcases/",
+    "packages/shared/shared/inspector/utils/treesitter_drivers/treesitter_testcases/",
+]
 
 [lint]
 select = ["E", "W", "F", "I", "C90", "ANN"]  # Common rulesets including E (errors), W (warnings), F (flake8), I (imports)
