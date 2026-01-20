@@ -1,16 +1,35 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Self
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from database.db import async_engine
 from database.models import OnboardingChecklist
+
+logger = logging.getLogger(__name__)
 
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+SKIPPABLE_STEPS = [
+    "connect_codebase",
+    "generate_codebase",
+    "setup_mcp",
+    "enable_export",
+    "generate_autodoc",
+    "invite_teammate",
+    "configured_rbac",
+    "teams",
+    "scim_provisioning",
+    "sso_sync",
+]
 
 
 class OnboardingChecklistService:
@@ -81,4 +100,73 @@ class OnboardingChecklistService:
         self._set_once("enable_export_completed_at", when)
         return self
 
+    def mark_configured_rbac_completed(self, when: datetime) -> Self:
+        self._set_once("configured_rbac_completed_at", when)
+        return self
 
+    def mark_teams_completed(self, when: datetime) -> Self:
+        self._set_once("teams_completed_at", when)
+        return self
+
+    def mark_scim_provisioning_completed(self, when: datetime) -> Self:
+        self._set_once("scim_provisioning_completed_at", when)
+        return self
+
+    def mark_sso_sync_completed(self, when: datetime) -> Self:
+        self._set_once("sso_sync_completed_at", when)
+        return self
+
+    def skip_step(self, step: str) -> Self:
+        if step not in SKIPPABLE_STEPS:
+            raise ValueError(f"Invalid step: {step}")
+        setattr(self._checklist, f"{step}_skipped_at", _now_utc())
+        self._session.add(self._checklist)
+        self._session.commit()
+        self._session.refresh(self._checklist)
+        return self
+
+    def unskip_step(self, step: str) -> Self:
+        if step not in SKIPPABLE_STEPS:
+            raise ValueError(f"Invalid step: {step}")
+        setattr(self._checklist, f"{step}_skipped_at", None)
+        self._session.add(self._checklist)
+        self._session.commit()
+        self._session.refresh(self._checklist)
+        return self
+
+
+async def mark_setup_mcp_completed_async(organization_id: str, user_id: str) -> None:
+    """Mark MCP setup as completed for onboarding (fire-and-forget)."""
+    try:
+        async with AsyncSession(async_engine) as session:
+            checklist = (
+                await session.exec(
+                    select(OnboardingChecklist)
+                    .where(OnboardingChecklist.organization_id == organization_id)
+                    .where(OnboardingChecklist.user_id == user_id)
+                )
+            ).one_or_none()
+
+            if checklist is None:
+                checklist = OnboardingChecklist(
+                    organization_id=organization_id, user_id=user_id
+                )
+                session.add(checklist)
+                try:
+                    await session.commit()
+                except IntegrityError:
+                    await session.rollback()
+                    checklist = (
+                        await session.exec(
+                            select(OnboardingChecklist)
+                            .where(OnboardingChecklist.organization_id == organization_id)
+                            .where(OnboardingChecklist.user_id == user_id)
+                        )
+                    ).one()
+
+            if checklist.setup_mcp_completed_at is None:
+                checklist.setup_mcp_completed_at = datetime.now(timezone.utc)
+                session.add(checklist)
+                await session.commit()
+    except Exception:
+        logger.exception("Failed to mark MCP setup as completed")

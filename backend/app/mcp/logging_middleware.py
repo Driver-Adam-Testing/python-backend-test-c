@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -10,6 +11,9 @@ from fastmcp.tools.tool import ToolResult  # noqa: TCH002
 from pydantic import BaseModel, ValidationError
 
 from app.mcp.oauth_auth import get_user_from_token
+from app.services.onboarding_checklist_service import mark_setup_mcp_completed_async
+
+logger = logging.getLogger(__name__)
 
 
 class _McpComponentType(StrEnum):
@@ -87,6 +91,24 @@ class McpLoggingMiddleware(Middleware):
         self._logger.addHandler(handler)
         self._logger.setLevel(logging.INFO)
         self._logger.propagate = False
+
+        # Keep strong references to background tasks to prevent garbage collection
+        self._background_tasks: set[asyncio.Task] = set()
+
+    async def on_initialize(self, ctx: MiddlewareContext, call_next: any) -> None:
+        await call_next(ctx)
+
+        # Mark MCP setup complete after successful initialization
+        try:
+            user = get_user_from_token()
+            task = asyncio.create_task(
+                mark_setup_mcp_completed_async(user.organization_id, user.user_id)
+            )
+            # Store reference to prevent garbage collection
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except Exception:
+            logger.exception("Failed to get user for MCP setup completion tracking")
 
     async def on_call_tool(self, ctx: MiddlewareContext, call_next: any) -> any:
         user = get_user_from_token()
