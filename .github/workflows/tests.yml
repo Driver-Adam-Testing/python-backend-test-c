@@ -1,0 +1,61 @@
+name: Tests
+on:
+  push:
+    branches: ["develop", "staging"]
+  pull_request:
+    branches: ["develop", "staging"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Backend Unit
+            dir: backend
+            cmd: uv run pytest -m "not integration" -v --tb=short --no-cov
+          - name: Backend Integration
+            dir: backend
+            cmd: uv run pytest -m integration -v --tb=short --no-cov
+          - name: Content Services
+            dir: content_services
+            cmd: uv run pytest -v --tb=short --no-cov
+          - name: Shared Package
+            dir: packages/shared
+            cmd: uv run pytest shared -v --tb=short --no-cov
+
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.9.25"
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run tests
+        working-directory: ./${{ matrix.dir }}
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          PROJECT_NAME: test
+          OPENAI_API_KEY: fake
+        run: ${{ matrix.cmd }}
