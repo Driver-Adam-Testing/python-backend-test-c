@@ -17,6 +17,16 @@ dependencies = [
     "pydantic[email]>=2.11.7,<3.0.0",
     "auth0-python>=4.7.1,<5.0.0",
     "httpx>=0.28.1,<0.29.0",
+    "pygit2>=1.18.2,<2.0.0",
+    "tree-sitter>=0.25.1,<0.26.0",
+    "tree-sitter-c==0.23.4",
+    "tree-sitter-cpp==0.23.2",
+    "tree-sitter-c-sharp>=0.23.1,<0.24.0",
+    "tree-sitter-go>=0.25.0,<0.26.0",
+    "tree-sitter-java>=0.23.5,<0.24.0",
+    "tree-sitter-python>=0.25.0,<0.26.0",
+    "tree-sitter-ruby>=0.23.1,<0.24.0",
+    "tree-sitter-typescript>=0.23.2,<0.24.0",
 ]
 
 [dependency-groups]
