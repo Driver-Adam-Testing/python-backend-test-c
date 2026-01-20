@@ -1,9 +1,8 @@
 """Test cases for Python method definitions."""
 
-import asyncio
+from typing import Optional, List, Self, ClassVar
 from abc import abstractmethod
-from typing import ClassVar
-
+import asyncio
 
 # 1) Basic class with instance methods
 class BasicClass:
@@ -15,7 +14,6 @@ class BasicClass:
 
     def method_with_params(self, multiplier: int, suffix: str = "!") -> str:
         return f"{self.value * multiplier}{suffix}"
-
 
 # 2) Class methods and static methods
 class ClassAndStatic:
@@ -38,9 +36,8 @@ class ClassAndStatic:
         return x + y
 
     @staticmethod
-    def static_with_types(data: list[str]) -> str:
+    def static_with_types(data: List[str]) -> str:
         return ",".join(data)
-
 
 # 3) Property methods
 class PropertyExample:
@@ -65,17 +62,16 @@ class PropertyExample:
     @property
     def computed(self) -> int:
         if self._computed is None:
-            self._computed = self._value**2
+            self._computed = self._value ** 2
         return self._computed
 
     @property
     def read_only(self) -> str:
         return f"Value is {self._value}"
 
-
 # 4) Special/magic methods
 class SpecialMethods:
-    def __init__(self, data: list[int]):
+    def __init__(self, data: List[int]):
         self.data = data
 
     def __str__(self) -> str:
@@ -86,7 +82,6 @@ class SpecialMethods:
 
     def __len__(self) -> int:
         return len(self.data)
-
 
 # 5) Context manager methods
 class ContextManager:
@@ -103,7 +98,6 @@ class ContextManager:
         print(f"Releasing {self.resource_name}")
         self.resource = None
         return False  # Don't suppress exceptions
-
 
 # 6) Async methods
 class AsyncExample:
@@ -127,10 +121,8 @@ class AsyncExample:
         await asyncio.sleep(0.1)
         return False
 
-
 # 7) Abstract methods
-from abc import ABC
-
+from abc import ABC, abstractmethod
 
 class AbstractBase(ABC):
     @abstractmethod
@@ -144,7 +136,6 @@ class AbstractBase(ABC):
     def concrete_method(self) -> str:
         return "This is implemented"
 
-
 class ConcreteImplementation(AbstractBase):
     def required_method(self) -> str:
         return "implemented"
@@ -152,15 +143,12 @@ class ConcreteImplementation(AbstractBase):
     def another_required(self, param: int) -> bool:
         return param > 0
 
-
 # 8) Methods with decorators
 def method_decorator(func):
     def wrapper(self, *args, **kwargs):
         print(f"Calling {func.__name__}")
         return func(self, *args, **kwargs)
-
     return wrapper
-
 
 class DecoratedMethods:
     @method_decorator
@@ -177,7 +165,6 @@ class DecoratedMethods:
     def decorated_class(cls):
         return "class decorated"
 
-
 # 9) Private and protected methods
 class PrivateProtected:
     def public_method(self) -> str:
@@ -189,25 +176,23 @@ class PrivateProtected:
     def __private_method(self) -> str:
         return "private"
 
-
 # 10) Methods with complex signatures
 class ComplexSignatures:
     def method_with_many_params(
         self,
         required: str,
-        optional: int | None = None,
+        optional: Optional[int] = None,
         *args: str,
         keyword_only: bool = False,
-        **kwargs: str,
+        **kwargs: str
     ) -> dict:
         return {
             "required": required,
             "optional": optional,
             "args": args,
             "keyword_only": keyword_only,
-            "kwargs": kwargs,
+            "kwargs": kwargs
         }
-
 
 # 11) Methods in nested classes
 class OuterClass:
@@ -218,11 +203,9 @@ class OuterClass:
         def inner_method(self) -> str:
             return "inner"
 
-
 # 12) Free functions -- should not be extracted
 def foo(x: int, y: int) -> int:
     return x + y
-
 
 def bar(word: str) -> None:
     def baz(word: str) -> None:
