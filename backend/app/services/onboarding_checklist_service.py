@@ -147,7 +147,24 @@ async def mark_setup_mcp_completed_async(organization_id: str, user_id: str) -> 
                 )
             ).one_or_none()
 
-            if checklist and checklist.setup_mcp_completed_at is None:
+            if checklist is None:
+                checklist = OnboardingChecklist(
+                    organization_id=organization_id, user_id=user_id
+                )
+                session.add(checklist)
+                try:
+                    await session.commit()
+                except IntegrityError:
+                    await session.rollback()
+                    checklist = (
+                        await session.exec(
+                            select(OnboardingChecklist)
+                            .where(OnboardingChecklist.organization_id == organization_id)
+                            .where(OnboardingChecklist.user_id == user_id)
+                        )
+                    ).one()
+
+            if checklist.setup_mcp_completed_at is None:
                 checklist.setup_mcp_completed_at = datetime.now(timezone.utc)
                 session.add(checklist)
                 await session.commit()
