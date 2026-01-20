@@ -92,15 +92,21 @@ class McpLoggingMiddleware(Middleware):
         self._logger.setLevel(logging.INFO)
         self._logger.propagate = False
 
+        # Keep strong references to background tasks to prevent garbage collection
+        self._background_tasks: set[asyncio.Task] = set()
+
     async def on_initialize(self, ctx: MiddlewareContext, call_next: any) -> None:
         await call_next(ctx)
 
         # Mark MCP setup complete after successful initialization
         try:
             user = get_user_from_token()
-            asyncio.create_task(
+            task = asyncio.create_task(
                 mark_setup_mcp_completed_async(user.organization_id, user.user_id)
             )
+            # Store reference to prevent garbage collection
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
         except Exception:
             logger.exception("Failed to get user for MCP setup completion tracking")
 
