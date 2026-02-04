@@ -1,25 +1,2 @@
 version: 2
-updates:
-  # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "wednesday"
-      time: "09:00"
-      timezone: "America/Los_Angeles"
-    commit-message:
-      prefix: ⬆
-
-  # Python dependencies via uv workspace
-  # Single entry at root handles all workspace members via unified uv.lock
-  # See: https://docs.astral.sh/uv/guides/integration/dependency-bots/
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "wednesday"
-      time: "09:00"
-      timezone: "America/Los_Angeles"
-    commit-message:
-      prefix: ⬆
+updates: []
